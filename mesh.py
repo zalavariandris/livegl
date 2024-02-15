@@ -1,46 +1,13 @@
-import glfw # type: ignore
+from typing import Iterator, List, Tuple
+import numpy as np
 from OpenGL.GL import * # type: ignore
 import OpenGL.GL.shaders # type: ignore
-
-
 from dataclasses import dataclass
-import ctypes
-import numpy as np
-from texture import Texture
-from glfw_window import GLFWWindow
-from contextlib import contextmanager
-from typing import Iterator, List, Tuple
-
-def noise(w:int, h:int)->np.ndarray:
-    return np.random.rand(w,h,4).astype(np.float32)
 
 def assert_image_float_rgba(img:np.ndarray):
-
     assert len(img.shape) == 3 and img.shape[2] == 4 and img.dtype == np.float32, f"{img.shape}, {img.dtype}"
 
-@contextmanager
-def bind_vertex_array(attributeID:int)->Iterator[int]:
-    glBindVertexArray(attributeID)
-    yield attributeID
-    glBindVertexArray(0)
-
-@contextmanager
-def bind_buffer(target: GL_ARRAY_BUFFER | GL_ELEMENT_ARRAY_BUFFER, bufferID:int)->Iterator[int]:
-    glBindBuffer(target, bufferID)
-    yield bufferID
-    glBindBuffer(target, 0)
-
-@contextmanager
-def bind_texture(target: GL_TEXTURE_2D, textureID:int)->Iterator[int]:
-    glBindTexture(target, textureID)
-    yield textureID
-    glBindTexture(target, 0)
-
-@contextmanager
-def use_program(program_id:int)->Iterator[int]:
-    glUseProgram(program_id)
-    yield program_id
-    glUseProgram(0)
+from bind_with_context import *
 
 @dataclass
 class Mesh:
@@ -190,62 +157,52 @@ class Mesh:
         return mesh
 
     @classmethod
-    def points(klass, coords:np.ndarray | List[Tuple[float, float, float]]):
-        n = len(coords)
-        mesh = Mesh(pos=    np.array(coords, dtype=np.float32),
-                    uv=     np.linspace(0,1,99, dtype=np.float32),
-                    color=  np.ones(shape=(n, 4), dtype=np.float32),
-                    indices=np.arange(0,n,1, dtype=np.uint32),
-                    image=  np.ones(shape=(2,2,4), dtype=np.float32),
-                    mode=GL_POINTS)
-        return mesh
+    def points(cls, coords: np.ndarray | List[Tuple[float, float, float]], color: Tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)) -> 'Mesh':
+        pos = np.array(coords, dtype=np.float32)
+        uv = np.zeros((pos.shape[0], 2), dtype=np.float32)  # Placeholder UVs
+        color_array = np.array([color for _ in range(pos.shape[0])], dtype=np.float32)
+        indices = np.arange(0, pos.shape[0], dtype=np.uint32)
+        image = np.ones((2, 2, 4), dtype=np.float32)  # Placeholder image
+        return cls(pos=pos, uv=uv, color=color_array, indices=indices, image=image, mode=GL_POINTS)
 
     @classmethod
-    def rect(klass, x,y,w,h):
-        raise NotImplementedError
-        return mesh
+    def rectangle(cls, x: float, y: float, width: float, height: float, color: Tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)) -> 'Mesh':
+        half_width = width / 2
+        half_height = height / 2
+        pos = np.array([
+            (x - half_width, y - half_height, 0.0),
+            (x + half_width, y - half_height, 0.0),
+            (x + half_width, y + half_height, 0.0),
+            (x - half_width, y + half_height, 0.0)
+        ], dtype=np.float32)
 
-    def draw(self):
+        uv = np.array([
+            (0.0, 0.0),
+            (1.0, 0.0),
+            (1.0, 1.0),
+            (0.0, 1.0)
+        ], dtype=np.float32)
+
+        color_array = np.array([color for _ in range(4)], dtype=np.float32)
+
+        indices = np.array([
+            (0, 1, 2),
+            (0, 2, 3)
+        ], dtype=np.uint32)
+
+        image = np.zeros((2, 2, 4), dtype=np.float32)  # Placeholder image
+
+        return cls(pos=pos, uv=uv, color=color_array, indices=indices, image=image)
+
+
+    @classmethod
+    def sphere(cls, radius: float, slices: int = 32, stacks: int = 16, color: Tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)) -> 'Mesh':
+        # Implementation for generating a sphere mesh
+        pass
+
+    def render(self):
         with use_program(self.program):
             with bind_vertex_array(self.vao):
                 with bind_texture(GL_TEXTURE_2D, self.tex):
                     with bind_buffer(GL_ELEMENT_ARRAY_BUFFER, self.ebo):
                         glDrawElements(self.mode, self.indices.size, GL_UNSIGNED_INT, None)
-
-
-class MyWindow(GLFWWindow):
-    def __init__(self):
-        super().__init__()
-        
-        
-    def draw(self):
-        super().draw()
-        self.imageplane = Mesh.imagePlane(image=noise(128, 126))
-        self.imageplane.draw()
-
-        coords = np.array([(-0.5, -0.5, 0.0),
-              ( 0.5, -0.5, 0.0),
-              ( 0.5,  0.5, 0.0),
-              (-0.5,  0.5, 0.0)], dtype=np.float32)
-        coords+=(np.random.rand(*coords.shape)-np.array([0.5, 0.5, 0.5]))*0.1
-        self.points = Mesh.points(coords=coords)
-        self.points.draw()
-        # self.imageplane = ImagePlane(noise(128, 126))
-        # self.imageplane.draw()
-        # self.imageplane2 = ImagePlane(noise(128, 126))
-        # self.imageplane2.draw()
-        # self.points = Points(
-        # self.points.draw()
-        # img = np.random.rand(100,100,4)
-        # img = (img * 255).astype(np.uint8)
-        # tex = Texture(img)
-
-        # glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, None)
-
-    def on_cursor_pos(self, window, x, y):
-        print(x, y)
-
-if __name__ == "__main__":
-    app = MyWindow()
-    app.start()
-
