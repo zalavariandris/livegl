@@ -1,13 +1,16 @@
 from typing import Iterator, List, Tuple, Optional
 import numpy as np
+from numpy.typing import NDArray
 from OpenGL.GL import * # type: ignore
 import OpenGL.GL.shaders # type: ignore
 from dataclasses import dataclass
 
-def assert_image_float_rgba(img:np.ndarray):
-    assert len(img.shape) == 3 and img.shape[2] == 4 and img.dtype == np.float32, f"{img.shape}, {img.dtype}"
+def assert_image_float_rgba(img:NDArray[np.float32]):
+    assert img.ndim == 3 and img.shape[2]== 4 and img.dtype == np.float32, f"{img.shape}, {img.dtype}"
 
 from bind_with_context import *
+
+from numpy.typing import NDArray
 
 @dataclass
 class Mesh:
@@ -18,6 +21,60 @@ class Mesh:
     image:np.ndarray
     mode: GL_POINTS | GL_LINE_STRIP | GL_LINE_LOOP | GL_LINES | GL_LINE_STRIP_ADJACENCY | GL_LINES_ADJACENCY | GL_TRIANGLE_STRIP | GL_TRIANGLE_FAN | GL_TRIANGLES | GL_TRIANGLE_STRIP_ADJACENCY | GL_TRIANGLES_ADJACENCY | GL_PATCHES=GL_TRIANGLES
 
+    def update(self, 
+               positions:Optional[NDArray[np.float32] | List[Tuple[float, float, float]]]=None, 
+               uvs:Optional[NDArray[np.float32] | List[Tuple[float, float]]]=None, 
+               colors:Optional[NDArray[np.float32] | List[Tuple[float, float, float, float]]]=None, 
+               indices:Optional[NDArray[np.uint32] | List[int]]=None):
+        """update mesh attributes"""
+        positions = np.array(positions, dtype=np.float32) if positions is not None else self.positions
+        uvs =       np.array(uvs,       dtype=np.float32) if uvs is not None       else self.uvs
+        colors =    np.array(colors,    dtype=np.float32) if colors is not None    else self.colors
+        indices =   np.array(indices,   dtype=np.uint32)  if indices is not None   else self.indices
+
+        # check consistency
+        assert len(positions) == len(uvs) == len(colors) == len(indices), f"all attributes must have the same length, got: {len(self.positions), len(self.uvs), len(self.colors), len(self.indices)}"
+
+        # update GPU
+        with bind_vertex_array(self.vao):
+            if positions is not self.positions:
+                self.positions = positions
+                glDeleteBuffers(1, [self.posvbo])
+                self.posvbo = glGenBuffers(1)
+                loc = glGetAttribLocation(self.program, "position")
+                with bind_buffer(GL_ARRAY_BUFFER, self.posvbo):
+                    glBufferData(GL_ARRAY_BUFFER, self.positions.nbytes, self.positions, GL_DYNAMIC_DRAW)
+                    glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
+                    glEnableVertexAttribArray(loc)
+            if uvs is not self.uvs:
+                self.uvs = self.uvs
+                glDeleteBuffers(1, [self.uvvbo])
+                self.uvvbo = glGenBuffers(1)
+                loc = glGetAttribLocation(self.program, "uv")
+                with bind_buffer(GL_ARRAY_BUFFER, self.uvvbo):
+                    glBufferData(GL_ARRAY_BUFFER, self.uvs.nbytes, self.uvs, GL_DYNAMIC_DRAW)
+                    glVertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
+                    glEnableVertexAttribArray(loc)
+            if colors is not self.colors:
+                self.colors = colors
+                glDeleteBuffers(1, [self.colorvbo])
+                self.colorvbo = glGenBuffers(1)
+                loc = glGetAttribLocation(self.program, "color")
+                with bind_buffer(GL_ARRAY_BUFFER, self.colorvbo):
+                    glBufferData(GL_ARRAY_BUFFER, self.colors.nbytes, self.colors, GL_DYNAMIC_DRAW)
+                    glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
+                    glEnableVertexAttribArray(loc)
+
+        # vertex indices
+        if indices is not self.indices:
+            self.indices = indices
+            glDeleteBuffers(1, [self.ebo])
+            self.ebo = glGenBuffers(1)
+
+            with bind_buffer(GL_ELEMENT_ARRAY_BUFFER, self.ebo):
+                glBufferData(GL_ELEMENT_ARRAY_BUFFER, self.indices.nbytes, self.indices, GL_DYNAMIC_DRAW)
+
+
     def __post_init__(self):
         assert_image_float_rgba(self.image)
         assert self.positions.dtype == np.float32,    f"'pos' must be np.float32, got: {self.positions.dtype}"
@@ -27,10 +84,12 @@ class Mesh:
 
         # create gl objects
         self.vao = glGenVertexArrays(1)
-        self.pos_vbo = glGenBuffers(1)
-        self.uv_vbo  =glGenBuffers(1)
-        self.color_vbo = glGenBuffers(1)
+
+        self.posvbo = glGenBuffers(1)
+        self.uvvbo  =glGenBuffers(1)
+        self.colorvbo = glGenBuffers(1)
         self.ebo = glGenBuffers(1)
+
         self.tex = glGenTextures(1)
         self.program = None
 
@@ -46,6 +105,7 @@ class Mesh:
         void main()
         {
             gl_Position = vec4(position, 1.0f);
+            gl_PointSize = 4.0;
             vColor = color;
             outTexCoords = uv;
         }
@@ -79,19 +139,19 @@ class Mesh:
         # begin vertex attributes
         with bind_vertex_array(self.vao):
             loc = glGetAttribLocation(self.program, "position")
-            with bind_buffer(GL_ARRAY_BUFFER, self.pos_vbo):
+            with bind_buffer(GL_ARRAY_BUFFER, self.posvbo):
                 glBufferData(GL_ARRAY_BUFFER, self.positions.nbytes, self.positions, GL_DYNAMIC_DRAW)
                 glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
                 glEnableVertexAttribArray(loc)
 
             loc = glGetAttribLocation(self.program, "uv")
-            with bind_buffer(GL_ARRAY_BUFFER, self.uv_vbo):
+            with bind_buffer(GL_ARRAY_BUFFER, self.uvvbo):
                 glBufferData(GL_ARRAY_BUFFER, self.uvs.nbytes, self.uvs, GL_DYNAMIC_DRAW)
                 glVertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
                 glEnableVertexAttribArray(loc)
 
             loc = glGetAttribLocation(self.program, "color")
-            with bind_buffer(GL_ARRAY_BUFFER, self.color_vbo):
+            with bind_buffer(GL_ARRAY_BUFFER, self.colorvbo):
                 glBufferData(GL_ARRAY_BUFFER, self.colors.nbytes, self.colors, GL_DYNAMIC_DRAW)
                 glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
                 glEnableVertexAttribArray(loc)
@@ -117,13 +177,13 @@ class Mesh:
         TODO: this shoud be fixed, to make sure, error on deletion are not ignored. Maybe keep an _initalized_ boolean flag on the window class, and check that
         """
 
-        try: glDeleteBuffers(1, [self.pos_vbo])
+        try: glDeleteBuffers(1, [self.posvbo])
         except GLError as err: pass
 
-        try: glDeleteBuffers(1, [self.uv_vbo])
+        try: glDeleteBuffers(1, [self.uvvbo])
         except GLError as err: pass
 
-        try: glDeleteBuffers(1, [self.color_vbo])
+        try: glDeleteBuffers(1, [self.colorvbo])
         except GLError as err: pass
 
         try: glDeleteBuffers(1, [self.ebo])
@@ -166,7 +226,7 @@ class Mesh:
 
 
         indices = np.arange(0, positions.shape[0], dtype=np.uint32)
-        image = np.ones((2, 2, 4), dtype=np.float32)  # Placeholder image
+        image = np.ones(shape=(2, 2, 4), dtype=np.float32)  # Placeholder image
         return cls(positions=positions, uvs=uvs, colors=colors, indices=indices, image=image, mode=GL_POINTS)
 
     @classmethod
@@ -194,7 +254,7 @@ class Mesh:
             (0, 2, 3)
         ], dtype=np.uint32)
 
-        image = np.zeros((2, 2, 4), dtype=np.float32)  # Placeholder image
+        image = np.zeros(shape=(2, 2, 4), dtype=np.float32)  # Placeholder image
 
         return cls(positions=pos, uvs=uv, colors=color, indices=indices, image=image)
 

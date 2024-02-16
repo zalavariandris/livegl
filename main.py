@@ -146,12 +146,17 @@ class SelectionTool(MouseTool):
         elif event == MouseEvent.DRAG_FINISHED:
             print("select points in ", self.mousebegin, self.mousepos)
 
+    @property
     def selection(self):
-        return []
+        return self._selection
 
 def to_screen_space(points:np.ndarray, viewport:Tuple[float, float, float, float]):
     x, y, w, h = viewport
-    return (points[:,:2]+1.0)/2*(w, h)-(x, y)
+    points = (points[:,:2]+1.0)/2*(w, h) # scale and move
+    points = points * (1,-1) + (0,h) # flip
+    points = points - (x, y) # move
+    return points
+
 
 class MyWindow(GLFWWindow):
     def __init__(self):
@@ -167,21 +172,30 @@ class MyWindow(GLFWWindow):
         screen_coords = to_screen_space(coords, (0, 0, self.width, self.height))
         self.selectiontool = SelectionTool(candidates=screen_coords)
         
-        
+        self.selectiontool = SelectionTool(candidates=to_screen_space(self.points.positions, (0,0,self.width, self.height)))
+
     def render(self):
         super().render()
         self.imageplane = Mesh.imagePlane(image=noise(128, 126))
+        self.imageplane.render()
+
+
+        self.points.update(colors=np.random.rand(*self.points.colors.shape)*0.5,
+                           positions=self.points.positions+np.random.rand(*self.points.positions.shape)*0.001-0.001/2)
         
-        self.selectiontool.update(mousepos=glfw.get_cursor_pos(self.window), leftbutton=True if glfw.get_mouse_button(self.window, glfw.MOUSE_BUTTON_LEFT) else False)
 
-        self.selectiontool.selection()
-        self.points.color = np.array( [(1,1,1,1),(1,1,1,1),(1,1,1,1),(1,1,1,1)], dtype=np.float32 )
+        
+        self.selectiontool.candidates = to_screen_space(self.points.positions, (0,0,self.width, self.height))
+        self.selectiontool.update(mousepos=glfw.get_cursor_pos(self.window), leftbutton=glfw.get_mouse_button(self.window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS)
+        colors = self.points.colors
+        print("selection:", self.selectiontool.selection)
+        colors[self.selectiontool.selection] = (1,1,1,1)
+        self.points.update(colors = colors)
+
         self.points.render()
-        # selection = self.selector.update()
 
 
-
-        # self.imageplane = ImagePlane(noise(128, 126))
+        # self.imageplane = ImagePlane(noise(128, 126)
         # self.imageplane.draw()
         # self.imageplane2 = ImagePlane(noise(128, 126))
         # self.imageplane2.draw()
