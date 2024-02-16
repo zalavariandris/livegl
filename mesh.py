@@ -86,13 +86,13 @@ class Mesh:
 
             loc = glGetAttribLocation(self.program, "uv")
             with bind_buffer(GL_ARRAY_BUFFER, self.uv_vbo):
-                glBufferData(GL_ARRAY_BUFFER, self.uv.nbytes, self.uv, GL_DYNAMIC_DRAW)
+                glBufferData(GL_ARRAY_BUFFER, self.uvs.nbytes, self.uvs, GL_DYNAMIC_DRAW)
                 glVertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
                 glEnableVertexAttribArray(loc)
 
             loc = glGetAttribLocation(self.program, "color")
             with bind_buffer(GL_ARRAY_BUFFER, self.color_vbo):
-                glBufferData(GL_ARRAY_BUFFER, self.color.nbytes, self.color, GL_DYNAMIC_DRAW)
+                glBufferData(GL_ARRAY_BUFFER, self.colors.nbytes, self.colors, GL_DYNAMIC_DRAW)
                 glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
                 glEnableVertexAttribArray(loc)
 
@@ -140,7 +140,7 @@ class Mesh:
 
     @classmethod
     def imagePlane(klass, image:np.ndarray):
-        mesh = Mesh(pos=np.array([    (-0.5, -0.5, 0.0),
+        mesh = Mesh(positions=np.array([    (-0.5, -0.5, 0.0),
                                       ( 0.5, -0.5, 0.0),
                                       ( 0.5,  0.5, 0.0),
                                       (-0.5,  0.5, 0.0)], dtype=np.float32),
@@ -148,7 +148,7 @@ class Mesh:
                                       (1.0, 0.0),
                                       (1.0, 1.0),
                                       (0.0, 1.0)],        dtype=np.float32),
-                    color=np.array([  (1.0, 0.0, 0.0, 1.0),
+                    colors=np.array([  (1.0, 0.0, 0.0, 1.0),
                                       (0.0, 1.0, 0.0, 1.0),
                                       (0.0, 0.0, 1.0, 1.0),
                                       (1.0, 1.0, 1.0, 1.0)],   dtype=np.float32),
@@ -196,7 +196,7 @@ class Mesh:
 
         image = np.zeros((2, 2, 4), dtype=np.float32)  # Placeholder image
 
-        return cls(pos=pos, uv=uv, color=color, indices=indices, image=image)
+        return cls(positions=pos, uvs=uv, colors=color, indices=indices, image=image)
 
 
     @classmethod
