@@ -1,4 +1,4 @@
-from typing import Iterator, List, Tuple
+from typing import Iterator, List, Tuple, Optional
 import numpy as np
 from OpenGL.GL import * # type: ignore
 import OpenGL.GL.shaders # type: ignore
@@ -11,18 +11,19 @@ from bind_with_context import *
 
 @dataclass
 class Mesh:
-    pos: np.ndarray
-    uv: np.ndarray
-    color: np.ndarray
+    positions: np.ndarray
+    uvs: np.ndarray
+    colors: np.ndarray
     indices: np.ndarray
     image:np.ndarray
     mode: GL_POINTS | GL_LINE_STRIP | GL_LINE_LOOP | GL_LINES | GL_LINE_STRIP_ADJACENCY | GL_LINES_ADJACENCY | GL_TRIANGLE_STRIP | GL_TRIANGLE_FAN | GL_TRIANGLES | GL_TRIANGLE_STRIP_ADJACENCY | GL_TRIANGLES_ADJACENCY | GL_PATCHES=GL_TRIANGLES
 
     def __post_init__(self):
         assert_image_float_rgba(self.image)
-        assert self.pos.dtype == np.float32,    f"'pos' must be np.float32, got: {self.pos.dtype}"
-        assert self.uv.dtype == np.float32,     f"'uv' must be np.float32, got: {self.pos.dtype}"
-        assert self.indices.dtype == np.uint32, f"'indices' must be np.uint32, got: {self.pos.uint32}"
+        assert self.positions.dtype == np.float32,    f"'pos' must be np.float32, got: {self.positions.dtype}"
+        assert self.uvs.dtype == np.float32,     f"'uv' must be np.float32, got: {self.uvs.dtype}"
+        assert self.colors.dtype == np.float32,     f"'uv' must be np.float32, got: {self.colors.dtype}"
+        assert self.indices.dtype == np.uint32, f"'indices' must be np.uint32, got: {self.indices.uint32}"
 
         # create gl objects
         self.vao = glGenVertexArrays(1)
@@ -157,16 +158,21 @@ class Mesh:
         return mesh
 
     @classmethod
-    def points(cls, coords: np.ndarray | List[Tuple[float, float, float]], color: Tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)) -> 'Mesh':
+    def points(cls, coords: np.ndarray | List[Tuple[float, float, float]], colors: Optional[np.ndarray | List[Tuple[float, float, float, float]]]=None) -> 'Mesh':
         pos = np.array(coords, dtype=np.float32)
         uv = np.zeros((pos.shape[0], 2), dtype=np.float32)  # Placeholder UVs
-        color_array = np.array([color for _ in range(pos.shape[0])], dtype=np.float32)
+
+        print(pos.shape)
+        color = np.array(colors, dtype=np.float32) if colors is not None else np.ones(shape=(pos.shape[0], 4), dtype=np.float32)
+
+
+
         indices = np.arange(0, pos.shape[0], dtype=np.uint32)
         image = np.ones((2, 2, 4), dtype=np.float32)  # Placeholder image
-        return cls(pos=pos, uv=uv, color=color_array, indices=indices, image=image, mode=GL_POINTS)
+        return cls(pos=pos, uv=uv, color=color, indices=indices, image=image, mode=GL_POINTS)
 
     @classmethod
-    def rectangle(cls, x: float, y: float, width: float, height: float, color: Tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)) -> 'Mesh':
+    def rectangle(cls, x: float, y: float, width: float, height: float, colors: Tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)) -> 'Mesh':
         half_width = width / 2
         half_height = height / 2
         pos = np.array([
@@ -183,7 +189,7 @@ class Mesh:
             (0.0, 1.0)
         ], dtype=np.float32)
 
-        color_array = np.array([color for _ in range(4)], dtype=np.float32)
+        color = np.array(colors, dtype=np.float32) if colors is not None else np.ones(shape=(pos.shape[1], 4), dtype=np.float32)
 
         indices = np.array([
             (0, 1, 2),
@@ -192,7 +198,7 @@ class Mesh:
 
         image = np.zeros((2, 2, 4), dtype=np.float32)  # Placeholder image
 
-        return cls(pos=pos, uv=uv, color=color_array, indices=indices, image=image)
+        return cls(pos=pos, uv=uv, color=color, indices=indices, image=image)
 
 
     @classmethod

@@ -31,9 +31,11 @@ class GLFWWindow:
         if not glfw.init():
             return
 
+        self._width, self._height = width, height
+
         print("creating the window")
         glfw.window_hint(glfw.DECORATED, True) # Show/Hide titlebar
-        self.window = glfw.create_window(width, height, title, None, None)
+        self.window = glfw.create_window(self._width, self._height, title, None, None)
 
         glfw.set_window_refresh_callback(self.window, self.on_refresh) # render while eventloop is blocking eg: resize
         glfw.set_framebuffer_size_callback(self.window, self.on_resize)
@@ -59,6 +61,14 @@ class GLFWWindow:
         self.selection_end = (0,0)
 
         self.__class__._current_window = self
+
+    @property
+    def width(self):
+        return self._width
+
+    @property
+    def height(self):
+        return self._height
 
     def get_mouse_pos(self)->Tuple[float, float]:
         return glfw.get_cursor_pos(self.window)
