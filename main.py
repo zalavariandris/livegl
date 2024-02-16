@@ -162,7 +162,7 @@ class MyWindow(GLFWWindow):
               (-0.5,  0.5, 0.0)], dtype=np.float32)
         coords+=(np.random.rand(*coords.shape)-np.array([0.5, 0.5, 0.5]))*0.1
         colors = [(1,0,0,1),(0,1,0,1),(0.3,.3,1,1),(1,1,0,1)]
-        self.points = Mesh.points(coords=coords, colors=colors)
+        self.points = Mesh.points(positions=coords, colors=colors)
 
         screen_coords = to_screen_space(coords, (0, 0, self.width, self.height))
         self.selectiontool = SelectionTool(candidates=screen_coords)

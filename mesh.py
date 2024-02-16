@@ -23,7 +23,7 @@ class Mesh:
         assert self.positions.dtype == np.float32,    f"'pos' must be np.float32, got: {self.positions.dtype}"
         assert self.uvs.dtype == np.float32,     f"'uv' must be np.float32, got: {self.uvs.dtype}"
         assert self.colors.dtype == np.float32,     f"'uv' must be np.float32, got: {self.colors.dtype}"
-        assert self.indices.dtype == np.uint32, f"'indices' must be np.uint32, got: {self.indices.uint32}"
+        assert self.indices.dtype == np.uint32, f"'indices' must be np.uint32, got: {self.indices.dtype}"
 
         # create gl objects
         self.vao = glGenVertexArrays(1)
@@ -80,7 +80,7 @@ class Mesh:
         with bind_vertex_array(self.vao):
             loc = glGetAttribLocation(self.program, "position")
             with bind_buffer(GL_ARRAY_BUFFER, self.pos_vbo):
-                glBufferData(GL_ARRAY_BUFFER, self.pos.nbytes, self.pos, GL_DYNAMIC_DRAW)
+                glBufferData(GL_ARRAY_BUFFER, self.positions.nbytes, self.positions, GL_DYNAMIC_DRAW)
                 glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
                 glEnableVertexAttribArray(loc)
 
@@ -144,7 +144,7 @@ class Mesh:
                                       ( 0.5, -0.5, 0.0),
                                       ( 0.5,  0.5, 0.0),
                                       (-0.5,  0.5, 0.0)], dtype=np.float32),
-                    uv=np.array([     (0.0, 0.0),
+                    uvs=np.array([     (0.0, 0.0),
                                       (1.0, 0.0),
                                       (1.0, 1.0),
                                       (0.0, 1.0)],        dtype=np.float32),
@@ -158,18 +158,16 @@ class Mesh:
         return mesh
 
     @classmethod
-    def points(cls, coords: np.ndarray | List[Tuple[float, float, float]], colors: Optional[np.ndarray | List[Tuple[float, float, float, float]]]=None) -> 'Mesh':
-        pos = np.array(coords, dtype=np.float32)
-        uv = np.zeros((pos.shape[0], 2), dtype=np.float32)  # Placeholder UVs
-
-        print(pos.shape)
-        color = np.array(colors, dtype=np.float32) if colors is not None else np.ones(shape=(pos.shape[0], 4), dtype=np.float32)
+    def points(cls, positions: np.ndarray | List[Tuple[float, float, float]], colors: Optional[np.ndarray | List[Tuple[float, float, float, float]]]=None) -> 'Mesh':
+        positions = np.array(positions, dtype=np.float32)
+        uvs = np.zeros((positions.shape[0], 2), dtype=np.float32)  # Placeholder UVs
+        colors = np.array(colors, dtype=np.float32) if colors is not None else np.ones(shape=(pos.shape[0], 4), dtype=np.float32)
 
 
 
-        indices = np.arange(0, pos.shape[0], dtype=np.uint32)
+        indices = np.arange(0, positions.shape[0], dtype=np.uint32)
         image = np.ones((2, 2, 4), dtype=np.float32)  # Placeholder image
-        return cls(pos=pos, uv=uv, color=color, indices=indices, image=image, mode=GL_POINTS)
+        return cls(positions=positions, uvs=uvs, colors=colors, indices=indices, image=image, mode=GL_POINTS)
 
     @classmethod
     def rectangle(cls, x: float, y: float, width: float, height: float, colors: Tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)) -> 'Mesh':
