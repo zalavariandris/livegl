@@ -3,8 +3,8 @@ import numpy as np
 from numpy.typing import NDArray
 from OpenGL.GL import * # type: ignore
 import OpenGL.GL.shaders # type: ignore
-from dataclasses import dataclass
 
+import glm
 def assert_image_float_rgba(img:NDArray[np.float32]):
     assert img.ndim == 3 and img.shape[2]== 4 and img.dtype == np.float32, f"{img.shape}, {img.dtype}"
 
@@ -12,90 +12,43 @@ from bind_with_context import *
 
 from numpy.typing import NDArray
 
-@dataclass
 class Mesh:
-    positions: np.ndarray
-    uvs: np.ndarray
-    colors: np.ndarray
-    indices: np.ndarray
-    image:np.ndarray
-    mode: GL_POINTS | GL_LINE_STRIP | GL_LINE_LOOP | GL_LINES | GL_LINE_STRIP_ADJACENCY | GL_LINES_ADJACENCY | GL_TRIANGLE_STRIP | GL_TRIANGLE_FAN | GL_TRIANGLES | GL_TRIANGLE_STRIP_ADJACENCY | GL_TRIANGLES_ADJACENCY | GL_PATCHES=GL_TRIANGLES
+    def __init__(self, 
+               positions:NDArray[np.float32] | List[Tuple[float, float, float]], 
+               uvs:NDArray[np.float32] | List[Tuple[float, float]], 
+               colors:NDArray[np.float32] | List[Tuple[float, float, float, float]], 
+               indices:NDArray[np.uint32] | List[int],
+               image:NDArray[np.float32],
+               projection:glm.mat4=glm.ortho(-1,1,-1,1,-1,1),
+               view:glm.mat4=glm.mat4(),
+               mode=GL_TRIANGLES):
 
-    def update(self, 
-               positions:Optional[NDArray[np.float32] | List[Tuple[float, float, float]]]=None, 
-               uvs:Optional[NDArray[np.float32] | List[Tuple[float, float]]]=None, 
-               colors:Optional[NDArray[np.float32] | List[Tuple[float, float, float, float]]]=None, 
-               indices:Optional[NDArray[np.uint32] | List[int]]=None):
-        """update mesh attributes"""
-        positions = np.array(positions, dtype=np.float32) if positions is not None else self.positions
-        uvs =       np.array(uvs,       dtype=np.float32) if uvs is not None       else self.uvs
-        colors =    np.array(colors,    dtype=np.float32) if colors is not None    else self.colors
-        indices =   np.array(indices,   dtype=np.uint32)  if indices is not None   else self.indices
+        # validate input
+        assert_image_float_rgba(image)
+        assert positions.dtype == np.float32,    f"'pos' must be np.float32, got: {positions.dtype}"
+        assert uvs.dtype == np.float32,     f"'uv' must be np.float32, got: {uvs.dtype}"
+        assert colors.dtype == np.float32,     f"'uv' must be np.float32, got: {colors.dtype}"
+        assert indices.dtype == np.uint32, f"'indices' must be np.uint32, got: {indices.dtype}"
 
         # check consistency
-        assert len(positions) == len(uvs) == len(colors) == len(indices), f"all attributes must have the same length, got: {len(self.positions), len(self.uvs), len(self.colors), len(self.indices)}"
+        assert len(positions) == len(uvs) == len(colors), f"all attributes must have the same length, got: {len(positions), len(uvs), len(colors), len(indices)}"
 
-        # update GPU
-        with bind_vertex_array(self.vao):
-            if positions is not self.positions:
-                self.positions = positions
-                glDeleteBuffers(1, [self.posvbo])
-                self.posvbo = glGenBuffers(1)
-                loc = glGetAttribLocation(self.program, "position")
-                with bind_buffer(GL_ARRAY_BUFFER, self.posvbo):
-                    glBufferData(GL_ARRAY_BUFFER, self.positions.nbytes, self.positions, GL_DYNAMIC_DRAW)
-                    glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
-                    glEnableVertexAttribArray(loc)
-            if uvs is not self.uvs:
-                self.uvs = self.uvs
-                glDeleteBuffers(1, [self.uvvbo])
-                self.uvvbo = glGenBuffers(1)
-                loc = glGetAttribLocation(self.program, "uv")
-                with bind_buffer(GL_ARRAY_BUFFER, self.uvvbo):
-                    glBufferData(GL_ARRAY_BUFFER, self.uvs.nbytes, self.uvs, GL_DYNAMIC_DRAW)
-                    glVertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
-                    glEnableVertexAttribArray(loc)
-            if colors is not self.colors:
-                self.colors = colors
-                glDeleteBuffers(1, [self.colorvbo])
-                self.colorvbo = glGenBuffers(1)
-                loc = glGetAttribLocation(self.program, "color")
-                with bind_buffer(GL_ARRAY_BUFFER, self.colorvbo):
-                    glBufferData(GL_ARRAY_BUFFER, self.colors.nbytes, self.colors, GL_DYNAMIC_DRAW)
-                    glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
-                    glEnableVertexAttribArray(loc)
+        # consolidate inputs
+        self.positions = positions
+        self.uvs = uvs
+        self.colors = colors
+        self.indices = indices
+        self.image = image
+        self.projection = projection
+        self.view = view
+        self.mode = mode
 
-        # vertex indices
-        if indices is not self.indices:
-            self.indices = indices
-            glDeleteBuffers(1, [self.ebo])
-            self.ebo = glGenBuffers(1)
-
-            with bind_buffer(GL_ELEMENT_ARRAY_BUFFER, self.ebo):
-                glBufferData(GL_ELEMENT_ARRAY_BUFFER, self.indices.nbytes, self.indices, GL_DYNAMIC_DRAW)
-
-
-    def __post_init__(self):
-        assert_image_float_rgba(self.image)
-        assert self.positions.dtype == np.float32,    f"'pos' must be np.float32, got: {self.positions.dtype}"
-        assert self.uvs.dtype == np.float32,     f"'uv' must be np.float32, got: {self.uvs.dtype}"
-        assert self.colors.dtype == np.float32,     f"'uv' must be np.float32, got: {self.colors.dtype}"
-        assert self.indices.dtype == np.uint32, f"'indices' must be np.uint32, got: {self.indices.dtype}"
-
-        # create gl objects
-        self.vao = glGenVertexArrays(1)
-
-        self.posvbo = glGenBuffers(1)
-        self.uvvbo  =glGenBuffers(1)
-        self.colorvbo = glGenBuffers(1)
-        self.ebo = glGenBuffers(1)
-
-        self.tex = glGenTextures(1)
-        self.program = None
-
-        # create shader
+        # SETUP GL
+        # create shader program
         vertex_shader = """
         #version 330
+        uniform mat4 viewMatrix;
+        uniform mat4 projectionMatrix;
         in layout(location = 0) vec3 position;
         in layout(location = 1) vec2 uv;
         in layout(location = 2) vec4 color;
@@ -104,7 +57,7 @@ class Mesh:
         out vec2 outTexCoords;
         void main()
         {
-            gl_Position = vec4(position, 1.0f);
+            gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0f);
             gl_PointSize = 4.0;
             vColor = color;
             outTexCoords = uv;
@@ -136,31 +89,35 @@ class Mesh:
         #           ( 0.5,  0.5, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0),
         #           (-0.5,  0.5, 0.0, 1.0, 1.0, 1.0, 0.0, 1.0)]
 
-        # begin vertex attributes
+        self.vao = glGenVertexArrays(1)
         with bind_vertex_array(self.vao):
             loc = glGetAttribLocation(self.program, "position")
+            self.posvbo = glGenBuffers(1)
             with bind_buffer(GL_ARRAY_BUFFER, self.posvbo):
                 glBufferData(GL_ARRAY_BUFFER, self.positions.nbytes, self.positions, GL_DYNAMIC_DRAW)
                 glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
                 glEnableVertexAttribArray(loc)
 
             loc = glGetAttribLocation(self.program, "uv")
+            self.uvvbo  =glGenBuffers(1)
             with bind_buffer(GL_ARRAY_BUFFER, self.uvvbo):
                 glBufferData(GL_ARRAY_BUFFER, self.uvs.nbytes, self.uvs, GL_DYNAMIC_DRAW)
                 glVertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
                 glEnableVertexAttribArray(loc)
 
             loc = glGetAttribLocation(self.program, "color")
+            self.colorvbo = glGenBuffers(1)
             with bind_buffer(GL_ARRAY_BUFFER, self.colorvbo):
                 glBufferData(GL_ARRAY_BUFFER, self.colors.nbytes, self.colors, GL_DYNAMIC_DRAW)
                 glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
                 glEnableVertexAttribArray(loc)
 
-        # vertex indices
+        self.ebo = glGenBuffers(1)
         with bind_buffer(GL_ELEMENT_ARRAY_BUFFER, self.ebo):
             glBufferData(GL_ELEMENT_ARRAY_BUFFER, self.indices.nbytes, self.indices, GL_DYNAMIC_DRAW)
 
         # create texture
+        self.tex = glGenTextures(1)
         with bind_texture(GL_TEXTURE_2D, self.tex):
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT) # texture wrapping params
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
@@ -168,7 +125,8 @@ class Mesh:
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
             # glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
             h, w, c = self.image.shape
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_FLOAT, self.image)
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_FLOAT, self.image)
+
 
     def __del__(self):
         """__del__ might be called after glfw terminate when python is shutting dowwn.
@@ -198,56 +156,149 @@ class Mesh:
         try: glDeleteProgram(self.program)
         except GLError as err: pass
 
-    @classmethod
-    def imagePlane(klass, image:np.ndarray):
-        mesh = Mesh(positions=np.array([    (-0.5, -0.5, 0.0),
-                                      ( 0.5, -0.5, 0.0),
-                                      ( 0.5,  0.5, 0.0),
-                                      (-0.5,  0.5, 0.0)], dtype=np.float32),
-                    uvs=np.array([     (0.0, 0.0),
-                                      (1.0, 0.0),
-                                      (1.0, 1.0),
-                                      (0.0, 1.0)],        dtype=np.float32),
-                    colors=np.array([  (1.0, 0.0, 0.0, 1.0),
-                                      (0.0, 1.0, 0.0, 1.0),
-                                      (0.0, 0.0, 1.0, 1.0),
-                                      (1.0, 1.0, 1.0, 1.0)],   dtype=np.float32),
-                    indices=np.array([(0,1,2), (0,2,3)],  dtype=np.uint32),
-                    image=image,
-                    mode=GL_TRIANGLES)
-        return mesh
+    def update(self, 
+               positions:Optional[NDArray[np.float32] | List[Tuple[float, float, float]]]=None, 
+               uvs:Optional[NDArray[np.float32] | List[Tuple[float, float]]]=None, 
+               colors:Optional[NDArray[np.float32] | List[Tuple[float, float, float, float]]]=None, 
+               indices:Optional[NDArray[np.uint32] | List[int]]=None,
+               image:Optional[NDArray[np.float32]]=None,
+               projection:Optional[glm.mat4]=None,
+               view:Optional[glm.mat4]=None):
+        """update mesh attributes"""
+        positions = np.array(positions, dtype=np.float32) if positions is not None else self.positions
+        uvs =       np.array(uvs,       dtype=np.float32) if uvs is not None       else self.uvs
+        colors =    np.array(colors,    dtype=np.float32) if colors is not None    else self.colors
+        indices =   np.array(indices,   dtype=np.uint32)  if indices is not None   else self.indices
 
-    @classmethod
-    def points(cls, positions: np.ndarray | List[Tuple[float, float, float]], colors: Optional[np.ndarray | List[Tuple[float, float, float, float]]]=None) -> 'Mesh':
-        positions = np.array(positions, dtype=np.float32)
-        uvs = np.zeros((positions.shape[0], 2), dtype=np.float32)  # Placeholder UVs
-        colors = np.array(colors, dtype=np.float32) if colors is not None else np.ones(shape=(pos.shape[0], 4), dtype=np.float32)
+        # check consistency
+        assert len(positions) == len(uvs) == len(colors), f"all attributes must have the same length, got: {len(self.positions), len(self.uvs), len(self.colors), len(self.indices)}"
+
+        # update GPU
+        with bind_vertex_array(self.vao):
+            if positions is not self.positions:
+                self.positions = positions
+                glDeleteBuffers(1, [self.posvbo])
+                self.posvbo = glGenBuffers(1)
+                loc = glGetAttribLocation(self.program, "position")
+                with bind_buffer(GL_ARRAY_BUFFER, self.posvbo):
+                    glBufferData(GL_ARRAY_BUFFER, self.positions.nbytes, self.positions, GL_DYNAMIC_DRAW)
+                    glVertexAttribPointer(loc, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
+                    glEnableVertexAttribArray(loc)
+            if uvs is not self.uvs:
+                self.uvs = self.uvs
+                glDeleteBuffers(1, [self.uvvbo])
+                self.uvvbo = glGenBuffers(1)
+                loc = glGetAttribLocation(self.program, "uv")
+                with bind_buffer(GL_ARRAY_BUFFER, self.uvvbo):
+                    glBufferData(GL_ARRAY_BUFFER, self.uvs.nbytes, self.uvs, GL_DYNAMIC_DRAW)
+                    glVertexAttribPointer(loc, 2, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
+                    glEnableVertexAttribArray(loc)
+
+            if colors is not self.colors:
+                self.colors = colors
+                glDeleteBuffers(1, [self.colorvbo])
+                self.colorvbo = glGenBuffers(1)
+                loc = glGetAttribLocation(self.program, "color")
+                with bind_buffer(GL_ARRAY_BUFFER, self.colorvbo):
+                    glBufferData(GL_ARRAY_BUFFER, self.colors.nbytes, self.colors, GL_DYNAMIC_DRAW)
+                    glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
+                    glEnableVertexAttribArray(loc)
+
+        # vertex indices
+        if indices is not self.indices:
+            self.indices = indices
+            glDeleteBuffers(1, [self.ebo])
+            self.ebo = glGenBuffers(1)
+
+            with bind_buffer(GL_ELEMENT_ARRAY_BUFFER, self.ebo):
+                glBufferData(GL_ELEMENT_ARRAY_BUFFER, self.indices.nbytes, self.indices, GL_DYNAMIC_DRAW)
+
+        image = image if image is not None else self.image
+        if image is not self.image:
+            self.image = image
+            glDeleteTextures(1, [self.tex])
+            self.tex = glGenTextures(1)
+            with bind_texture(GL_TEXTURE_2D, self.tex):
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT) # texture wrapping params
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR) # texture filtering params
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+                # glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+                glPixelStorei(GL_PACK_ALIGNMENT, 4)
+                h, w, c = self.image.shape
+                assert c==4
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_FLOAT, self.image)
+
+        if projection is not None:
+            self.projection = projection
+        if view is not None:
+            self.view = view
+
+    def render(self):
+        # Get the uniform locations
+        with use_program(self.program):
+            projection_location = glGetUniformLocation(self.program, "projectionMatrix")
+            view_location = glGetUniformLocation(self.program, "viewMatrix")
+            glUniformMatrix4fv(projection_location, 1, GL_FALSE, glm.value_ptr(self.projection))
+            glUniformMatrix4fv(view_location, 1, GL_FALSE, glm.value_ptr(self.view))
+            with bind_vertex_array(self.vao):
+                with bind_texture(GL_TEXTURE_2D, self.tex):
+                    with bind_buffer(GL_ELEMENT_ARRAY_BUFFER, self.ebo):
+                        glDrawElements(self.mode, self.indices.size, GL_UNSIGNED_INT, None)
+
+class ImagePlane(Mesh):
+    def __init__(self, image:np.ndarray):
+        super().__init__(
+            positions=np.array([    (-0.5, -0.5, 0.0),
+                              ( 0.5, -0.5, 0.0),
+                              ( 0.5,  0.5, 0.0),
+                              (-0.5,  0.5, 0.0)], dtype=np.float32),
+            uvs=np.array([     (0.0, 0.0),
+                              (1.0, 0.0),
+                              (1.0, 1.0),
+                              (0.0, 1.0)],        dtype=np.float32),
+            colors=np.array([ (1.0, 1.0, 1.0, 1.0),
+                              (1.0, 1.0, 1.0, 1.0),
+                              (1.0, 1.0, 1.0, 1.0),
+                              (1.0, 1.0, 1.0, 1.0)],   dtype=np.float32),
+            indices=np.array([(0,1,2), (0,2,3)],  dtype=np.uint32),
+            image=image,
+            mode=GL_TRIANGLES)
 
 
+class PointCloud(Mesh):
+    def __init__(self, positions=np.ndarray, colors:Optional[np.ndarray]=None):
+        super().__init__(
+            positions=np.array(positions, dtype=np.float32),
+            uvs = np.zeros((positions.shape[0], 2), dtype=np.float32),  # Placeholder UVs
+            colors = np.array(colors, dtype=np.float32) if colors is not None else np.ones(shape=(positions.shape[0], 4), dtype=np.float32),
+            indices = np.arange(0, positions.shape[0], dtype=np.uint32),
+            image = np.ones(shape=(2, 2, 4), dtype=np.float32),  # Placeholder image
+            mode=GL_POINTS)
 
-        indices = np.arange(0, positions.shape[0], dtype=np.uint32)
-        image = np.ones(shape=(2, 2, 4), dtype=np.float32)  # Placeholder image
-        return cls(positions=positions, uvs=uvs, colors=colors, indices=indices, image=image, mode=GL_POINTS)
 
-    @classmethod
-    def rectangle(cls, x: float, y: float, width: float, height: float, colors: Tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)) -> 'Mesh':
-        half_width = width / 2
-        half_height = height / 2
-        pos = np.array([
-            (x - half_width, y - half_height, 0.0),
-            (x + half_width, y - half_height, 0.0),
-            (x + half_width, y + half_height, 0.0),
-            (x - half_width, y + half_height, 0.0)
+class Rectangle(Mesh):
+    def __init__(self, rect, color=None):
+        x,y,w,h = rect
+        positions = np.array([
+            (x    , y    , 0.0),
+            (x + w, y    , 0.0),
+            (x + w, y + h, 0.0),
+            (x    , y + h, 0.0)
         ], dtype=np.float32)
 
-        uv = np.array([
+        uvs = np.array([
             (0.0, 0.0),
             (1.0, 0.0),
             (1.0, 1.0),
             (0.0, 1.0)
         ], dtype=np.float32)
 
-        color = np.array(colors, dtype=np.float32) if colors is not None else np.ones(shape=(pos.shape[1], 4), dtype=np.float32)
+        if color is not None:
+            colors = np.ones(shape=(positions.shape[0], 4), dtype=np.float32)
+            colors[:] = color
+        else:
+            colors = np.ones(shape=(positions.shape[0], 4), dtype=np.float32)
 
         indices = np.array([
             (0, 1, 2),
@@ -256,17 +307,23 @@ class Mesh:
 
         image = np.zeros(shape=(2, 2, 4), dtype=np.float32)  # Placeholder image
 
-        return cls(positions=pos, uvs=uv, colors=color, indices=indices, image=image)
+        super().__init__(
+            positions=positions,
+            uvs = uvs,
+            colors = colors,
+            indices = indices,
+            image = np.ones(shape=(2, 2, 4), dtype=np.float32),  # Placeholder image
+            mode=GL_TRIANGLES)
 
-
-    @classmethod
-    def sphere(cls, radius: float, slices: int = 32, stacks: int = 16, color: Tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)) -> 'Mesh':
-        # Implementation for generating a sphere mesh
-        pass
-
-    def render(self):
-        with use_program(self.program):
-            with bind_vertex_array(self.vao):
-                with bind_texture(GL_TEXTURE_2D, self.tex):
-                    with bind_buffer(GL_ELEMENT_ARRAY_BUFFER, self.ebo):
-                        glDrawElements(self.mode, self.indices.size, GL_UNSIGNED_INT, None)
+    def update(self, rect:Optional[Tuple[float, float, float, float]]=None, projection=None, view=None):
+        if rect is not None:
+            x,y,w,h = rect
+            positions = np.array([
+                (x    , y    , 0.0),
+                (x + w, y    , 0.0),
+                (x + w, y + h, 0.0),
+                (x    , y + h, 0.0)
+            ], dtype=np.float32)
+        else:
+            positions = None
+        super().update(positions=positions, view=view, projection=projection)

@@ -1,10 +1,38 @@
 import glfw
 from OpenGL.GL import *
 from typing import Tuple
-# import numpy as np
+import numpy as np
+import glm
 # from PIL import Image
 # import sys
 # import psutil
+
+# @dataclass
+# class Camera:
+#     eye: Vec3=(0,0,0)
+#     target: Vec3=(0,0,1)
+#     fov: float=math.radians(90)
+#     aspect: float=1.0
+#     near: float=1.0
+#     far: float=100.0
+#     tiltshift:Vec2=(0,0)
+
+#     def __postinit__(self):
+#         """normalize parameters"""
+#         self.eye = glm.vec3(self.eye)
+#         self.target = glm.vec3(self.target)
+#         self.tiltshift = glm.vec2(self.tiltshift)
+
+#     @property
+#     def projection(self):
+#         aspect = self.aspect
+#         tiltshift = glm.vec2(self.tiltshift)/self.near
+#         projection = glm.frustum(-1*aspect, 1*aspect, -1+tiltshift.y, 1+tiltshift.y, self.near, self.far) # left right, bottom, top, near, far
+#         return projection
+
+#     @property
+#     def view(self):
+#         return glm.lookAt(self.eye, self.target, (0,1,0))
 
 class GLFWWindow:
     """
@@ -39,10 +67,10 @@ class GLFWWindow:
 
         glfw.set_window_refresh_callback(self.window, self.on_refresh) # render while eventloop is blocking eg: resize
         glfw.set_framebuffer_size_callback(self.window, self.on_resize)
+
         glfw.set_cursor_pos_callback(self.window, self.on_cursor_pos)
-        glfw.set_key_callback(self.window, self.on_key)
-        glfw.set_mouse_button_callback(self.window, self.on_mouse_button)
-        glfw.set_cursor_pos_callback(self.window, self.on_mouse_move)
+        # glfw.set_key_callback(self.window, self.on_key)
+        # glfw.set_mouse_button_callback(self.window, self.on_mouse_button)
 
         if not self.window:
             glfw.terminate()
@@ -52,6 +80,8 @@ class GLFWWindow:
         glfw.make_context_current(self.window)
         glfw.swap_interval(1) # vsync
         glEnable(GL_PROGRAM_POINT_SIZE)
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
         # handle selection
         self.mouse_pos = 0, 0
@@ -61,6 +91,12 @@ class GLFWWindow:
         self.selection_end = (0,0)
 
         self.__class__._current_window = self
+
+        self.on_resize(self.window, self.width, self.height)
+
+    def on_resize(self, window, width, height):
+        glViewport(0,0,width, height)
+        self._width, self._height = width, height
 
     @property
     def width(self):
@@ -100,36 +136,37 @@ class GLFWWindow:
         if key == glfw.KEY_F11  and action == glfw.PRESS:
             self.toggle_fullscreen()
 
-    def on_resize(self, window, width, height):
-        glViewport( 0,0, width,height)
-
     def on_refresh(self, window):
         self.render()
         glfw.swap_buffers(window)
 
-    def on_mouse_button(self, window, button:int, action:int, mods:int):
-        if button == glfw.MOUSE_BUTTON_LEFT:
-            if action == glfw.PRESS:
-                self.selection_start = (self.mouse_x, self.mouse_y)
-                self.selection_active = True
-            elif action == glfw.RELEASE:
-                self.selection_end = (self.mouse_x, self.mouse_y)
-                self.selection_active = False
-                self.finalize_selection()
+    def on_cursor_pos(self, window, x, y):
+        pass
 
-    def on_mouse_move(self, window, x:int, y:int):
-        self.mouse_x = x
-        self.mouse_y = y
-        if self.selection_active:
-            self.selection_end = (self.mouse_x, self.mouse_y)
 
-    def finalize_selection(self):
-        if self.selection_start and self.selection_end:
-            # Determine selected points within the selection box
-            min_x = min(self.selection_start[0], self.selection_end[0])
-            max_x = max(self.selection_start[0], self.selection_end[0])
-            min_y = min(self.selection_start[1], self.selection_end[1])
-            max_y = max(self.selection_start[1], self.selection_end[1])
+    # def on_mouse_button(self, window, button:int, action:int, mods:int):
+    #     if button == glfw.MOUSE_BUTTON_LEFT:
+    #         if action == glfw.PRESS:
+    #             self.selection_start = (self.mouse_x, self.mouse_y)
+    #             self.selection_active = True
+    #         elif action == glfw.RELEASE:
+    #             self.selection_end = (self.mouse_x, self.mouse_y)
+    #             self.selection_active = False
+    #             self.finalize_selection()
+
+    # def on_mouse_move(self, window, x:int, y:int):
+    #     self.mouse_x = x
+    #     self.mouse_y = y
+    #     if self.selection_active:
+    #         self.selection_end = (self.mouse_x, self.mouse_y)
+
+    # def finalize_selection(self):
+    #     if self.selection_start and self.selection_end:
+    #         # Determine selected points within the selection box
+    #         min_x = min(self.selection_start[0], self.selection_end[0])
+    #         max_x = max(self.selection_start[0], self.selection_end[0])
+    #         min_y = min(self.selection_start[1], self.selection_end[1])
+    #         max_y = max(self.selection_start[1], self.selection_end[1])
 
     def start(self):
         print("start render loop")
