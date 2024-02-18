@@ -7,16 +7,42 @@ from dataclasses import dataclass, field
 import ctypes
 import numpy as np
 from texture import Texture
-from glfw_window import GLFWWindow
+from glfw_window import Window
 from contextlib import contextmanager
 from typing import Iterator, List, Tuple
 import glm
 
 
-from mesh import Mesh, ImagePlane, PointCloud, Rectangle
+import mesh
 import time
-from mousetools import SelectionTool, MoveTool, MouseState
+from mousetools import SelectionTool, MoveTool
 
+import math
+from typing import Tuple
+import math
+
+from functools import cache
+
+def subtract(V1, V2):
+    return V1[0]-V2[0], V1[1]-V2[1]
+
+def length(V):
+    return math.sqrt(V[0] ** 2 + V[1] ** 2)
+
+def distance(P1, P2):
+    V = subtract(P1,P2)
+    return length(V)
+
+def rect_contains(rect:Tuple[float, float, float, float], P:Tuple[float, float]):
+    x,y,w,h = rect
+    return P[0]>x and P[0]<x+w and P[1]>y and P[1]<y+h
+
+def rect_from_corners(x1,y1,x2,y2):
+    x = min(x1,x2)
+    y = min(y1,y2)
+    w = max(x1,x2)-x
+    h = max(y1,y2)-y
+    return x,y,w,h
 
 type Point = Tuple[float, float] #x,y
 type Rect = Tuple[float, float, float, float] # x,y,w,h
@@ -25,11 +51,13 @@ def noise(w:int=256, h:int=256)->np.ndarray:
     return np.random.rand(h,w,4).astype(np.float32)
 
 def constant(w:int=256, h:int=256, color=(1,1,1,1)):
+    return np.full(shape=(h,w,4), fill_value=color, dtype=np.float32)
     img = np.empty(shape=(h,w,4))
     img[:] = color
     return img
 
-def checker(w:int=256, h:int=256, tile_size:Tuple[int,int]=32, colorA=(0,0,0,1), colorB=(1,1,1,1)):
+# @cache
+def checker(w:int=256, h:int=256, tile_size:Tuple[int,int]=(32, 32), colorA=(0,0,0,1), colorB=(1,1,1,1)):
     indices = np.indices((h, w, 4))
     return np.where(( (indices[0]+w/2) // tile_size[0] + (indices[1]+h/2) // tile_size[1]) % 2 == 0, colorA, colorB).astype(np.float32)
 
@@ -65,129 +93,130 @@ def unproject(points:np.ndarray, viewport:Rect, projection:glm.mat4=glm.mat4(), 
         unprojected_points.append((x, -y if flip_vertical else y, z))
     return np.array(unprojected_points)
 
-class MyWindow(GLFWWindow):
-    def __init__(self):
-        super().__init__()
-        # Create PointCloud
-        self.points = PointCloud(
-            positions=np.array([(-0.5, -0.5, 0),
-                                ( 0.5, -0.5, 0),
-                                ( 0.5,  0.5, 0),
-                                (-0.5,  0.5, 0)], dtype=np.float32),
-            colors=np.array([(1,0,0,1),
-                             (0,1,0,1),
-                             (0.3,.3,1,1),
-                             (1,1,0,1)], dtype=np.float32))
 
-        # Create selection Rectangle
-        self.bbox = Rectangle((0, 0, 0.5, 0.5), color=(.4,.6,1,.2))
-
-        # Create ImagePlane
-        self.imageplane = ImagePlane(image=noise(128, 128))
-
-        # Create MouseTools
-        self.selectiontool = SelectionTool(candidates=unproject(self.points.positions, (0,0,self.width, self.height)))
-        self.movetool = MoveTool()
-
-        self.on_resize(self.window, self.width, self.height)
-
-    def on_resize(self, window, w, h):
-        super().on_resize(window, w, h)
-        # camera projection
-        aspect = self.width/self.height
-        self.projection = glm.ortho(-aspect,aspect,-1, 1,-100,100)
-        # projection = glm.perspective(45.0, aspect, 1.0, 150.0);
-        self.view = glm.translate((0,0,1))
-
-    def render(self):
-        super().render()
-
-        # Switch tools
-        if glfw.get_key(self.window, glfw.KEY_B) == glfw.PRESS:
-            # TODO: activate selection tool
-            print("b is down")
-
-        if glfw.get_key(self.window, glfw.KEY_G) == glfw.PRESS:
-            # TODO: actiavet move tool
-            selection = self.selectiontool.selection
-            move = self.selectiontool.mousedelta
-            move=(move[0]/self.width*2, -move[1]/self.height*2, 0)
-            new_positions = self.points.positions
-            new_positions[selection]+=move
-            self.points.update(positions=new_positions)
-
-        # Animate Points
-        # wiggle points
-        self.points.update(colors=np.random.rand(*self.points.colors.shape)*0.3+0.5)
-        self.points.update(positions=self.points.positions+np.random.rand(*self.points.positions.shape)*0.001-0.001/2)
-
-        # set points color on selection
-        self.selectiontool.candidates = project(self.points.positions, viewport=(0,0,self.width, self.height), projection=self.projection, view=self.view)
-        self.selectiontool.update(mousepos=glfw.get_cursor_pos(self.window), leftbutton=glfw.get_mouse_button(self.window, glfw.MOUSE_BUTTON_LEFT) == glfw.PRESS)
+@dataclass
+class ViewModel:
+    controlpoints: np.ndarray
+    image: np.ndarray
+    selection: List
+    # def __init__(self):
+    #     self.src_corners = np.array([(-0.5, -0.5, 0),
+    #                         ( 0.5, -0.5, 0),
+    #                         ( 0.5,  0.5, 0),
+    #                         (-0.5,  0.5, 0)], dtype=np.float32)
+    #     self.dst_corners = np.copy(self.src_corners)
+    #     self.image = checker(256,256, (32,32))
+    #     self.selection = []
         
-        colors = self.points.colors
-        colors[self.selectiontool.selection] = (1,1,1,1)
-        self.points.update(colors = colors)
+    def move(self, x,y, z=0):
+        self.controlpoints[self.selection]+=x,y,z
 
-        # Selection Rectangle
-        if self.selectiontool.state == MouseState.DRAG:
-            x, y = self.selectiontool.mousepos
-            x2, y2 = self.selectiontool.mousebegin
-            projected = unproject(np.array([(x,y, 0), (x2, y2, 0)]), 
-                viewport=(0,0,self.width, self.height), 
-                projection=self.projection,
-                view=self.view)
+    def perform_box_selection(self, rect:Rect):
+        """
+        rect in world space
+        """
+        selection = []
+        x1,y1,w,h = rect
+        x2,y2 = x1+w, y1+h
+        for i, (x,y,z) in enumerate(self.controlpoints):
+            if x1<x and x<x2 and y1<y and y<y2:
+                selection.append(i)
+
+        self.selection = selection
+
+    @property
+    def src_corners(self):
+        return self.controlpoints[:4]
+
+    @property
+    def dst_corners(self):
+        return self.controlpoints[4:8]
+    
         
-            x,y = projected[0][0], projected[0][1]
-            x2, y2 = projected[1][0], projected[1][1]
-            w, h = x2-x, y2-y
-
-            self.bbox.update(rect=(x,y,w, h))
-        elif self.selectiontool.state == MouseState.IDLE:
-            x, y = self.selectiontool.mousepos
-            projected = unproject(np.array([(x,y, 0)]), 
-                viewport=(0,0,self.width, self.height), 
-                projection=self.projection,
-                view=self.view)
-        
-            w, h = 0.01, 0.01
-            x,y = projected[0][0]-w/2, projected[0][1]-h/2
-            self.bbox.update(rect=(x,y,w, h))
-
-        # Imageplane
-        # img = constant(256, 256, color=(1,1,1,1))
-        img = checker(256, 256, (32,32))
-        h,w,c = img.shape
-        model = glm.scale((2,2,2))
-        dst = project(self.points.positions, viewport=(0,0,w, h), view=glm.mat4(), model=model, projection=glm.ortho(-1,1,-1,1,-1,1), flip_vertical=False).astype(np.float32)
-        img = cornerpin(im_src=img, 
-                        src_pts=np.array([(0, 0),
-                                          (w, 0),
-                                          (w, h),
-                                          (0, h)], dtype=np.float32),
-                        dst_pts= dst)
-        
-        self.imageplane.update(image=img, projection=self.projection, view=self.view)
-
-        # Render objects
-        renderables = [self.imageplane, self.points, self.bbox]
-
-        # update projection
-        for obj in renderables:
-            obj.update(projection=self.projection, view=self.view)
-
-        # render
-        for obj in renderables:
-            obj.render()
-
-
-    def on_cursor_pos(self, window, x, y):
-        pass
-
-
-
 
 if __name__ == "__main__":
-    app = MyWindow()
-    app.start()
+    model = ViewModel(controlpoints = np.array([
+        (-0.5, -0.5,0.0), ( 0.5, -0.5,0.0), ( 0.5,  0.5,0.0), (-0.5,  0.5,0.0)], dtype=np.float32),
+                  image = checker(256,256, (32,32)),
+                  selection = [])
+    window = Window()
+
+    pointcloud = mesh.PointCloud(positions=model.controlpoints, colors=np.full(shape=(model.controlpoints.shape[0],4), fill_value=(0.5, 0.5, 0.5, 1.0), dtype=np.float32))
+    imageplane = mesh.ImagePlane(image=model.image)
+    selection_rect = mesh.Rectangle((0, 0, 0.5, 0.5), color=(.4,.6,1,.2))
+
+    def myTool():
+        print("========")
+        print("holg 'b' for box selection")
+        print("holg 'g' to move selected controlpoints")
+        print("========")
+        while True:
+            # handle move
+            if window.get_key_down(glfw.KEY_G):
+                mousebegin = window.get_mouse_pos()
+                previous_mouse_pos = window.get_mouse_pos()
+                while window.get_key_down(glfw.KEY_G):
+                    mousedelta = subtract(previous_mouse_pos, window.get_mouse_pos())
+                    previous_mouse_pos = window.get_mouse_pos()
+                    if length(mousedelta)>0:
+                        model.move(-mousedelta[0]/window.width, mousedelta[1]/window.width)
+                    yield
+            if window.get_key_down(glfw.KEY_B):
+                mousebegin = window.get_mouse_pos()
+                previous_mouse_pos = window.get_mouse_pos()
+                while window.get_key_down(glfw.KEY_B):
+                    mousedelta = subtract(previous_mouse_pos, window.get_mouse_pos())
+                    previous_mouse_pos = window.get_mouse_pos()
+                    if length(mousedelta)>0:
+                        mousepos = window.get_mouse_pos()
+                        P1 = mousebegin[0], mousebegin[1], 0
+                        P2 = mousepos[0], mousepos[1], 0
+                        P1,P2 = unproject([P1, P2], viewport=window.viewport)
+                        rect = rect_from_corners(P1[0], P1[1], P2[0], P2[1])
+                        model.perform_box_selection(rect=rect)
+
+                        # update selection rectangle
+                        selection_rect.update(rect=rect)
+                    yield
+                selection_rect.update(rect=(0,0,0,0))
+            yield
+
+    tool = myTool()
+
+    src_points = np.copy(model.controlpoints)
+
+    @window.event
+    def on_render():
+
+        # Tools
+        next(tool)
+
+        # Animate
+        colors = np.random.rand(*pointcloud.colors.shape)*0.3+0.5
+        colors[model.selection] = (1,1,1,1)
+        pointcloud.update(colors=colors)
+        pointcloud.update(positions=model.controlpoints)
+        
+        model.image = checker(128,128)
+        model.image*=(0.5, 0.5, 0.5, 1.0)
+        h,w,c = model.image.shape
+        src_corners = project(src_points, viewport=(0,0,w, h), flip_vertical=False)
+        dst_corners = project(model.controlpoints, viewport=(0,0,w, h), flip_vertical=False)
+        model.image = cornerpin(model.image, src_corners, dst_corners)
+        imageplane.update(image=model.image)
+
+        # Render
+        window.clear(color=(0.1,0.1,0.1,1.0))
+
+        # camera projection
+        projection = glm.ortho(-window.aspect,window.aspect,-1, 1,-100,100)
+        view = glm.translate((0,0,1))
+
+        imageplane.update(projection=projection, view=view)
+        imageplane.render()
+        pointcloud.update(projection=projection, view=view)
+        pointcloud.render()
+        selection_rect.render()
+
+    window.start()
 

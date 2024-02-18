@@ -3,6 +3,8 @@ from OpenGL.GL import *
 from typing import Tuple
 import numpy as np
 import glm
+
+from typing import Callable
 # from PIL import Image
 # import sys
 # import psutil
@@ -34,7 +36,7 @@ import glm
 #     def view(self):
 #         return glm.lookAt(self.eye, self.target, (0,1,0))
 
-class GLFWWindow:
+class Window:
     """
     Usage:
     class MyWindow(GLFWWindow):
@@ -69,8 +71,9 @@ class GLFWWindow:
         glfw.set_framebuffer_size_callback(self.window, self.on_resize)
 
         glfw.set_cursor_pos_callback(self.window, self.on_cursor_pos)
-        # glfw.set_key_callback(self.window, self.on_key)
+        glfw.set_key_callback(self.window, self.on_key)
         # glfw.set_mouse_button_callback(self.window, self.on_mouse_button)
+
 
         if not self.window:
             glfw.terminate()
@@ -94,9 +97,38 @@ class GLFWWindow:
 
         self.on_resize(self.window, self.width, self.height)
 
+        self.handlers = {
+            "on_refresh": [],
+            "on_resize": [],
+            "on_render":[],
+            "on_key_press": [],
+            "on_key_release": [],
+            "on_mouse_move": [],
+            "on_mouse_press": [],
+            "on_mouse_release": [],
+            "on_mouse_drag": [],
+            "on_mouse_enter": [],
+            "on_mouse_leave": [],
+            "on_mouse_scroll": []
+        }
+
+    def get_mouse_pos(self):
+        return glfw.get_cursor_pos(self.window)
+
+    def get_mouse_button(klass, button):
+        return glfw.get_mouse_button(self.window, button)
+
     def on_resize(self, window, width, height):
         glViewport(0,0,width, height)
         self._width, self._height = width, height
+
+    def dispatch(event_name:str, *args, **kwargs):
+        self.handlers[event_name](*args, **kwargs)
+
+    def event(self, fn:Callable):
+        assert fn.__name__ in self.handlers, f"no {fn.__name__} event handler"
+        handlers = self.handlers[fn.__name__]
+        self.handlers[fn.__name__].append(fn)
 
     @property
     def width(self):
@@ -106,19 +138,37 @@ class GLFWWindow:
     def height(self):
         return self._height
 
+    @property
+    def aspect(self):
+        return self.width / self.height
+
+    @property
+    def viewport(self):
+        return (0,0,self.width, self.height)
+
     def get_mouse_pos(self)->Tuple[float, float]:
         return glfw.get_cursor_pos(self.window)
 
     def get_mouse_button(self, button: glfw.MOUSE_BUTTON_RIGHT | glfw.MOUSE_BUTTON_LEFT | glfw.MOUSE_BUTTON_MIDDLE):
         return glfw.get_mouse_button(self.window, button) == glfw.PRESS
 
+    def get_key_down(self, key):
+        return glfw.get_key(self.window, key) == glfw.PRESS
+
     @classmethod
     def get_current_window(cls):
         return cls._current_window
 
-    def render(self):
-        glClearColor(0.1, 0.1, 0.1, 1.0)
+    def dispatch(self, event:str):
+        for fn in self.handlers[event]:
+            fn()
+
+    def clear(self, color=(0.1, 0.1, 0.1, 1.0)):
+        glClearColor(*color)
         glClear(GL_COLOR_BUFFER_BIT)
+
+    def render(self):
+        self.dispatch("on_render")
 
     def toggle_fullscreen(self):
         if not self._fullscreen:
