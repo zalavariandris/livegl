@@ -56,7 +56,7 @@ def constant(w:int=256, h:int=256, color=(1,1,1,1)):
     img[:] = color
     return img
 
-# @cache
+@cache
 def checker(w:int=256, h:int=256, tile_size:Tuple[int,int]=(32, 32), colorA=(0,0,0,1), colorB=(1,1,1,1)):
     indices = np.indices((h, w, 4))
     return np.where(( (indices[0]+w/2) // tile_size[0] + (indices[1]+h/2) // tile_size[1]) % 2 == 0, colorA, colorB).astype(np.float32)
@@ -143,7 +143,7 @@ if __name__ == "__main__":
 
     pointcloud = mesh.PointCloud(positions=model.controlpoints, colors=np.full(shape=(model.controlpoints.shape[0],4), fill_value=(0.5, 0.5, 0.5, 1.0), dtype=np.float32))
     imageplane = mesh.ImagePlane(image=model.image)
-    selection_rect = mesh.Rectangle((0, 0, 0.5, 0.5), color=(.4,.6,1,.2))
+    selection_rect = mesh.Rectangle((0, 0, 0.0, 0.0), color=(.4,.6,1,.2))
 
     def myTool():
         print("========")
@@ -156,10 +156,17 @@ if __name__ == "__main__":
                 mousebegin = window.get_mouse_pos()
                 previous_mouse_pos = window.get_mouse_pos()
                 while window.get_key_down(glfw.KEY_G):
-                    mousedelta = subtract(previous_mouse_pos, window.get_mouse_pos())
-                    previous_mouse_pos = window.get_mouse_pos()
+                    mousepos = window.get_mouse_pos()
+                    mousedelta = subtract(mousepos, previous_mouse_pos)
                     if length(mousedelta)>0:
-                        model.move(-mousedelta[0]/window.width, mousedelta[1]/window.width)
+                        mousepos = window.get_mouse_pos()
+                        P1 = previous_mouse_pos[0], previous_mouse_pos[1], 0
+                        P2 = mousepos[0], mousepos[1], 0
+                        P1,P2 = unproject([P1, P2], viewport=window.viewport, projection=window.projection, view=window.view)
+                        delta = subtract(P2,P1)
+                        print(delta)
+                        model.move(*delta)
+                    previous_mouse_pos = window.get_mouse_pos()
                     yield
             if window.get_key_down(glfw.KEY_B):
                 mousebegin = window.get_mouse_pos()
@@ -171,7 +178,7 @@ if __name__ == "__main__":
                         mousepos = window.get_mouse_pos()
                         P1 = mousebegin[0], mousebegin[1], 0
                         P2 = mousepos[0], mousepos[1], 0
-                        P1,P2 = unproject([P1, P2], viewport=window.viewport)
+                        P1,P2 = unproject([P1, P2], viewport=window.viewport, projection=window.projection, view=window.view)
                         rect = rect_from_corners(P1[0], P1[1], P2[0], P2[1])
                         model.perform_box_selection(rect=rect)
 
@@ -191,31 +198,31 @@ if __name__ == "__main__":
         # Tools
         next(tool)
 
+        # camera projection
         # Animate
-        colors = np.random.rand(*pointcloud.colors.shape)*0.3+0.5
+        colors = np.full(shape=(model.controlpoints.shape[0],4), fill_value=(0.5, 0.5, 0.5, 1.0), dtype=np.float32)
         colors[model.selection] = (1,1,1,1)
         pointcloud.update(colors=colors)
         pointcloud.update(positions=model.controlpoints)
         
-        model.image = checker(128,128)
-        model.image*=(0.5, 0.5, 0.5, 1.0)
-        h,w,c = model.image.shape
-        src_corners = project(src_points, viewport=(0,0,w, h), flip_vertical=False)
-        dst_corners = project(model.controlpoints, viewport=(0,0,w, h), flip_vertical=False)
-        model.image = cornerpin(model.image, src_corners, dst_corners)
-        imageplane.update(image=model.image)
+        img = checker(512,256)*(0.5, 0.5, 0.5, 1.0)
+        h,w,c = img.shape
+        src_corners = project(src_points*2, viewport=(0,0,w, h), projection=glm.ortho(-1,1,-1,1,-1,1), view=window.view, flip_vertical=False)
+        dst_corners = project(model.controlpoints*2, viewport=(0,0,w, h), projection=glm.ortho(-1,1,-1,1,-1,1), view=window.view, flip_vertical=False)
+        img = cornerpin(img, src_corners, dst_corners)
+
+        imageplane.update(image=img)
 
         # Render
         window.clear(color=(0.1,0.1,0.1,1.0))
 
-        # camera projection
-        projection = glm.ortho(-window.aspect,window.aspect,-1, 1,-100,100)
-        view = glm.translate((0,0,1))
 
-        imageplane.update(projection=projection, view=view)
+
+        imageplane.update(projection=window.projection, view=window.view)
         imageplane.render()
-        pointcloud.update(projection=projection, view=view)
+        pointcloud.update(projection=window.projection, view=window.view)
         pointcloud.render()
+        selection_rect.update(projection=window.projection, view=window.view)
         selection_rect.render()
 
     window.start()

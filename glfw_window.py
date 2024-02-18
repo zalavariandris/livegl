@@ -146,6 +146,14 @@ class Window:
     def viewport(self):
         return (0,0,self.width, self.height)
 
+    @property
+    def projection(self):
+        return glm.ortho(-self.aspect, self.aspect,-1, 1,-100,100)
+
+    @property
+    def view(self):
+        return glm.translate((0,0,1))
+
     def get_mouse_pos(self)->Tuple[float, float]:
         return glfw.get_cursor_pos(self.window)
 
