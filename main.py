@@ -50,6 +50,7 @@ type Rect = Tuple[float, float, float, float] # x,y,w,h
 def noise(w:int=256, h:int=256)->np.ndarray:
     return np.random.rand(h,w,4).astype(np.float32)
 
+@cache
 def constant(w:int=256, h:int=256, color=(1,1,1,1)):
     return np.full(shape=(h,w,4), fill_value=color, dtype=np.float32)
     img = np.empty(shape=(h,w,4))
@@ -111,6 +112,19 @@ class ViewModel:
     def move(self, x,y, z=0):
         self.controlpoints[self.selection]+=x,y,z
 
+    def select(self, pos:Tuple[float, float]):
+        threshold = 0.07
+        x1 = pos[0]-threshold
+        x2 = pos[0]+threshold
+        y1 = pos[1]-threshold
+        y2 = pos[1]+threshold
+
+        self.selection = []
+        for i, (x,y,z) in enumerate(self.controlpoints):
+            if x1<x and x<x2 and y1<y and y<y2:
+                self.selection = [i]
+                break
+
     def perform_box_selection(self, rect:Rect):
         """
         rect in world space
@@ -151,23 +165,18 @@ if __name__ == "__main__":
         print("holg 'g' to move selected controlpoints")
         print("========")
         while True:
-            # handle move
-            if window.get_key_down(glfw.KEY_G):
-                mousebegin = window.get_mouse_pos()
-                previous_mouse_pos = window.get_mouse_pos()
-                while window.get_key_down(glfw.KEY_G):
-                    mousepos = window.get_mouse_pos()
-                    mousedelta = subtract(mousepos, previous_mouse_pos)
-                    if length(mousedelta)>0:
-                        mousepos = window.get_mouse_pos()
-                        P1 = previous_mouse_pos[0], previous_mouse_pos[1], 0
-                        P2 = mousepos[0], mousepos[1], 0
-                        P1,P2 = unproject([P1, P2], viewport=window.viewport, projection=window.projection, view=window.view)
-                        delta = subtract(P2,P1)
-                        print(delta)
-                        model.move(*delta)
-                    previous_mouse_pos = window.get_mouse_pos()
-                    yield
+            # Select click
+            while window.get_mouse_button(glfw.MOUSE_BUTTON_LEFT):
+                mousepos = window.get_mouse_pos()
+                yield
+                if window.get_mouse_button(glfw.MOUSE_BUTTON_LEFT) == False:
+                    P1 = mousepos[0], mousepos[1], 0
+                    unprojected_points = unproject([P1], viewport=window.viewport, projection=window.projection, view=window.view)
+                    model.select(unprojected_points[0])
+                    print("click", window.get_mouse_pos())
+
+                
+            # Selection Rect Tool
             if window.get_key_down(glfw.KEY_B):
                 mousebegin = window.get_mouse_pos()
                 previous_mouse_pos = window.get_mouse_pos()
@@ -188,6 +197,24 @@ if __name__ == "__main__":
                 selection_rect.update(rect=(0,0,0,0))
             yield
 
+            # Move Tool
+            if window.get_key_down(glfw.KEY_G):
+                mousebegin = window.get_mouse_pos()
+                previous_mouse_pos = window.get_mouse_pos()
+                while window.get_key_down(glfw.KEY_G):
+                    mousepos = window.get_mouse_pos()
+                    mousedelta = subtract(mousepos, previous_mouse_pos)
+                    if length(mousedelta)>0:
+                        mousepos = window.get_mouse_pos()
+                        P1 = previous_mouse_pos[0], previous_mouse_pos[1], 0
+                        P2 = mousepos[0], mousepos[1], 0
+                        P1,P2 = unproject([P1, P2], viewport=window.viewport, projection=window.projection, view=window.view)
+                        delta = subtract(P2,P1)
+                        print(delta)
+                        model.move(*delta)
+                    previous_mouse_pos = window.get_mouse_pos()
+                    yield
+
     tool = myTool()
 
     src_points = np.copy(model.controlpoints)
@@ -207,8 +234,8 @@ if __name__ == "__main__":
         
         img = checker(512,256)*(0.5, 0.5, 0.5, 1.0)
         h,w,c = img.shape
-        src_corners = project(src_points*2, viewport=(0,0,w, h), projection=glm.ortho(-1,1,-1,1,-1,1), view=window.view, flip_vertical=False)
-        dst_corners = project(model.controlpoints*2, viewport=(0,0,w, h), projection=glm.ortho(-1,1,-1,1,-1,1), view=window.view, flip_vertical=False)
+        src_corners = project(src_points, viewport=(0,0,w, h), projection=glm.ortho(-0.5,0.5,-0.5,0.5,-1,1), view=window.view, flip_vertical=False)
+        dst_corners = project(model.controlpoints, viewport=(0,0,w, h), projection=glm.ortho(-0.5,0.5,-0.5,0.5,-1,1), view=window.view, flip_vertical=False)
         img = cornerpin(img, src_corners, dst_corners)
 
         imageplane.update(image=img)

@@ -249,14 +249,14 @@ class Mesh:
 class ImagePlane(Mesh):
     def __init__(self, image:np.ndarray):
         super().__init__(
-            positions=np.array([    (-0.5, -0.5, 0.0),
-                              ( 0.5, -0.5, 0.0),
-                              ( 0.5,  0.5, 0.0),
-                              (-0.5,  0.5, 0.0)], dtype=np.float32),
+            positions=np.array([(-0.5, -0.5, 0.0),
+                                ( 0.5, -0.5, 0.0),
+                                ( 0.5,  0.5, 0.0),
+                                (-0.5,  0.5, 0.0)], dtype=np.float32),
             uvs=np.array([     (0.0, 0.0),
-                              (1.0, 0.0),
-                              (1.0, 1.0),
-                              (0.0, 1.0)],        dtype=np.float32),
+                               (1.0, 0.0),
+                               (1.0, 1.0),
+                               (0.0, 1.0)],        dtype=np.float32),
             colors=np.array([ (1.0, 1.0, 1.0, 1.0),
                               (1.0, 1.0, 1.0, 1.0),
                               (1.0, 1.0, 1.0, 1.0),
