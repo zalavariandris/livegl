@@ -58,7 +58,7 @@ class Mesh:
         void main()
         {
             gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0f);
-            gl_PointSize = 4.0;
+            gl_PointSize = 8.0;
             vColor = color;
             outTexCoords = uv;
         }
