@@ -336,6 +336,7 @@ if __name__ == "__main__":
                     [P1] = unproject([P1], viewport=window.viewport, projection=window.projection, view=window.view)
                     model.perform_click_selection(world_pos=P1)
                     print("click")
+                    
         elif tool == "MoveTool":
             if event == "mousemove":
                 if window.is_mouse_dragging():
