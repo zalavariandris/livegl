@@ -304,9 +304,12 @@ if __name__ == "__main__":
         if tool == "SelectionTool":
             if event == "mousepress":
                 mousepos = window.get_mouse_pos()
-                if any(under_mouse(mousepos, cp) for cp in model.controlpoints[model.selection]):
+                if any(under_mouse(mousepos, cp) for cp in model.controlpoints):
                     tool = "MoveTool"
-                    print("press on selection")
+                    mousepos = window.get_mouse_pos()
+                    P1 = mousepos[0], mousepos[1], 0
+                    [P1] = unproject([P1], viewport=window.viewport, projection=window.projection, view=window.view)
+                    model.perform_click_selection(world_pos=P1)
 
             elif event == "mousemove":
                 if window.is_mouse_dragging():
