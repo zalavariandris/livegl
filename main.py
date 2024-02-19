@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 import ctypes
 import numpy as np
 from texture import Texture
-from glfw_window import Window, MouseMoveEvent, MouseClickEvent, MouseDragEvent
+from glfw_window import Window, MouseMove, MouseClick, MouseDrag
 from contextlib import contextmanager
 from typing import Iterator, List, Tuple
 import glm
@@ -125,18 +125,35 @@ class ViewModel:
                 self.selection = [i]
                 break
 
-    def perform_box_selection(self, rect:Rect):
+    def perform_box_selection(self, world_rect:Rect):
         """
         rect in world space
         """
         selection = []
-        x1,y1,w,h = rect
+        x1,y1,w,h = world_rect
         x2,y2 = x1+w, y1+h
         for i, (x,y,z) in enumerate(self.controlpoints):
             if x1<x and x<x2 and y1<y and y<y2:
                 selection.append(i)
 
         self.selection = selection
+
+    def perform_click_selection(self, world_pos: Point, threshold=0.1):
+        """
+        rect in world space
+        """
+        selection = []
+        x1,y1 = world_pos[0]-threshold, world_pos[1]-threshold
+        x2,y2 = world_pos[0]+threshold, world_pos[1]+threshold
+        for i, (x,y,z) in enumerate(self.controlpoints):
+            if x1<x and x<x2 and y1<y and y<y2:
+                selection.append(i)
+
+        self.selection = selection
+
+    def perform_move(self, delta:Tuple[float, float, float]):
+        print(delta)
+        self.controlpoints[self.selection]+=delta
 
     @property
     def src_corners(self):
@@ -214,47 +231,47 @@ if __name__ == "__main__":
     #                 previous_mouse_pos = window.get_mouse_pos()
     #                 yield
 
-    def myTool2():
-        mousepos = window.get_mouse_pos()
-        previous_mouse_pos = mousepos
-        mousedelta = (0,0)
+    # def myTool2():
+    #     mousepos = window.get_mouse_pos()
+    #     previous_mouse_pos = mousepos
+    #     mousedelta = (0,0)
 
-        def under_mouse(Px,Py,threshold = 0.05):
-            unprojected = unproject([(mousepos[0], mousepos[1], 0)], viewport=window.viewport, projection=window.projection, view=window.view)
-            x,y = unprojected[0][0], unprojected[0][1]
-            return x-threshold<Px and Px<x+threshold and y-threshold<Py and Py<y+threshold
+    #     def under_mouse(Px,Py,threshold = 0.05):
+    #         unprojected = unproject([(mousepos[0], mousepos[1], 0)], viewport=window.viewport, projection=window.projection, view=window.view)
+    #         x,y = unprojected[0][0], unprojected[0][1]
+    #         return x-threshold<Px and Px<x+threshold and y-threshold<Py and Py<y+threshold
 
-        def dispatch(event, *args, **kwargs):
-            print(event, *args, **kwargs)
+    #     def dispatch(event, *args, **kwargs):
+    #         print(event, *args, **kwargs)
 
-        while True:
-            previous_mouse_pos = mousepos
-            mousepos = window.get_mouse_pos()
-            mousedelta = subtract(mousepos, previous_mouse_pos)
+    #     while True:
+    #         previous_mouse_pos = mousepos
+    #         mousepos = window.get_mouse_pos()
+    #         mousedelta = subtract(mousepos, previous_mouse_pos)
 
-            if length(mousedelta)>0:
-                if any([under_mouse(x,y) for x,y,z in model.controlpoints]):
-                    dispatch("hover", mousepos)
-                else:
-                    dispatch("move", mousepos)
+    #         if length(mousedelta)>0:
+    #             if any([under_mouse(x,y) for x,y,z in model.controlpoints]):
+    #                 dispatch("hover", mousepos)
+    #             else:
+    #                 dispatch("move", mousepos)
 
-            while window.get_mouse_button(glfw.MOUSE_BUTTON_LEFT):
-                previous_mouse_pos = mousepos
-                mousepos = window.get_mouse_pos()
-                mousedelta = subtract(mousepos, previous_mouse_pos)
-                yield
-                if length(mousedelta)>0:
-                    dispatch("dragged")
+    #         while window.get_mouse_button(glfw.MOUSE_BUTTON_LEFT):
+    #             previous_mouse_pos = mousepos
+    #             mousepos = window.get_mouse_pos()
+    #             mousedelta = subtract(mousepos, previous_mouse_pos)
+    #             yield
+    #             if length(mousedelta)>0:
+    #                 dispatch("dragged")
                     
-                elif not window.get_mouse_button(glfw.MOUSE_BUTTON_LEFT):
-                    print("click")
-                    yield True
-                    break
-            yield
+    #             elif not window.get_mouse_button(glfw.MOUSE_BUTTON_LEFT):
+    #                 print("click")
+    #                 yield True
+    #                 break
+    #         yield
 
 
     # tool = myTool()
-    tool = myTool2()
+    # tool = myTool2()
 
     # @window.event
     # def on_event(event):
@@ -274,67 +291,65 @@ if __name__ == "__main__":
 
 
 
-    activetool = "SelectionTool"
-    @window.on_event
-    def on_input_event(event):
-        def under_mouse(event, Px,Py,threshold = 0.09):
-            unprojected = unproject([(event.pos[0], event.pos[1], 0)], viewport=window.viewport, projection=window.projection, view=window.view)
-            x,y = unprojected[0][0], unprojected[0][1]
-            return x-threshold<Px and Px<x+threshold and y-threshold<Py and Py<y+threshold
+    tool = "SelectionTool"
+    @window.on_input_event
+    def on_input_event(event, *args, **kwargs):
+        global tool
+        def under_mouse(mousepos, point, threshold = 0.09):
+            unprojected = unproject([(mousepos[0], mousepos[1], 0)], viewport=window.viewport, projection=window.projection, view=window.view)
+            Mx,My = unprojected[0][0], unprojected[0][1]
+            Px, Py = point[0], point[1]
+            return Mx-threshold<Px and Px<Mx+threshold and My-threshold<Py and Py<My+threshold
 
-        if isinstance(event, MouseMoveEvent):
-            if length(event.delta)>0:
-                x,y = unproject([(event.pos[0], event.pos[1], 0)], viewport=window.viewport, projection=window.projection, view=window.view)[0][:2]
-                print(x, y)
-                if any([under_mouse(event, x,y) for x,y,z in model.controlpoints]):
-                    print("hover", event.pos)
+        if tool == "SelectionTool":
+            if event == "mousepress":
+                mousepos = window.get_mouse_pos()
+                if any(under_mouse(mousepos, cp) for cp in model.controlpoints[model.selection]):
+                    tool = "MoveTool"
+                    print("press on selection")
+
+            elif event == "mousemove":
+                if window.is_mouse_dragging():
+                    # perform box selection
+                    mousepos = window.get_mouse_pos()
+                    mousebegin = window.get_mouse_begin()[0], window.get_mouse_begin()[1]
+                    P1 = mousebegin[0], mousebegin[1], 0
+                    P2 = mousepos[0], mousepos[1], 0
+                    P1,P2 = unproject([P1, P2], viewport=window.viewport, projection=window.projection, view=window.view)
+                    rect = rect_from_corners(P1[0], P1[1], P2[0], P2[1])
+                    model.perform_box_selection(world_rect=rect)
                 else:
-                    print("move", event.pos)
+                    if any(under_mouse(window.get_mouse_pos(), cp) for cp in model.controlpoints):
+                        print("hover")
+                    else:
+                        print("move")
 
-        if isinstance(event, MouseClickEvent):
-            for i, controlpoint in enumerate(model.controlpoints):
-                if under_mouse(event, controlpoint[0], controlpoint[1]):
-                    model.selection = [i]
-                    print(model.selection)
-                    break
+            elif event=="mouserelease":
+                if window.is_mouse_dragging():
+                    print("drag end")
+                else:
+                    mousepos = window.get_mouse_pos()
+                    P1 = mousepos[0], mousepos[1], 0
+                    [P1] = unproject([P1], viewport=window.viewport, projection=window.projection, view=window.view)
+                    model.perform_click_selection(world_pos=P1)
+                    print("click")
+        elif tool == "MoveTool":
+            if event == "mousemove":
+                if window.is_mouse_dragging():
+                    mousepos = window.get_mouse_pos()
+                    mousedelta = window.get_mouse_delta()
+                    mouseprev = subtract(mousepos, (mousedelta[0], mousedelta[1]))
+                    P2 = mousepos[0], mousepos[1], 0
+                    P1 = mouseprev[0], mouseprev[1], 0
+                    P1,P2 = unproject([P1, P2], viewport=window.viewport, projection=window.projection, view=window.view)
+                    world_delta = subtract(P2, P1)
+                    model.perform_move((world_delta[0], world_delta[1], 0))
+            elif event=="mouserelease":
+                tool = "SelectionTool"
 
-        if isinstance(event, MouseDragEvent):
-            print("drag")
 
-    @window.on_event
-    def on_render(event):
-        # Tools
-        # next(tool)
-
-
-        if window.is_mouse_moved():
-            print("hello")
-
-        if window.is_mouse_dragged():
-            print("hello2")
-
-        if window.is_key_pressed(glfw.KEY_G):
-            print("G is pressed")
-
-        # if window.is_mouse_down():
-        #     pass
-
-        # if window.is_mouse_pressed():
-        #     pass
-
-        # if window.is_mouse_released():
-        #     pass
-
-        if window.is_key_down(glfw.KEY_G):
-            print("G is down")
-
-        if window.is_key_released(glfw.KEY_G):
-            print("G is released")
-
-        # window.is_key_pressed()
-        # window.is_key_down()
-        # window.is_mouse_dragged()
-
+    @window.on_render
+    def on_render():
         # camera projection
         # Animate
         colors = np.full(shape=(model.controlpoints.shape[0],4), fill_value=(0.5, 0.5, 0.5, 1.0), dtype=np.float32)

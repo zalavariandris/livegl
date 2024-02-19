@@ -45,47 +45,47 @@ class Event:
 
 @dataclass(kw_only=True, frozen=True)
 class RenderEvent(Event):
-    name:str="on_render"
+    name:str="render"
 
 @dataclass(kw_only=True, frozen=True)
 class KeyEvent(Event):
     key:str=""
 
 @dataclass(kw_only=True, frozen=True)
-class KeyPressEvent(KeyEvent):
-    name:str="on_key_press"
+class KeyPress(KeyEvent):
+    name:str="key_press"
 
 @dataclass(kw_only=True, frozen=True)
-class KeyReleaseEvent(KeyEvent):
-    name:str="on_key_release"
+class KeyRelease(KeyEvent):
+    name:str="key_release"
 
 @dataclass(kw_only=True, frozen=True)
 class MouseEvent(Event):
     pos:Tuple[float, float]
 
 @dataclass(kw_only=True, frozen=True)
-class MousePressEvent(MouseEvent):
-    name:str="on_mouse_press"
+class MousePress(MouseEvent):
+    name:str="mouse_press"
     button: int
 
 @dataclass(kw_only=True, frozen=True)
-class MouseReleaseEvent(MouseEvent):
-    name:str="on_mouse_release"
+class MouseRelease(MouseEvent):
+    name:str="mouse_release"
     button: int
 
 @dataclass(kw_only=True, frozen=True)
-class MouseClickEvent(MouseEvent):
-    name:str="on_mouse_click"
+class MouseClick(MouseEvent):
+    name:str="mouse_click"
     button: int
 
 @dataclass(kw_only=True, frozen=True)
-class MouseMoveEvent(MouseEvent):
-    name:str="on_mouse_move"
+class MouseMove(MouseEvent):
+    name:str="mouse_move"
     delta: Tuple[float,float]
 
 @dataclass(kw_only=True, frozen=True)
-class MouseDragEvent(MouseEvent):
-    name:str="on_mouse_drag"
+class MouseDrag(MouseEvent):
+    name:str="mouse_drag"
     begin: Tuple[float, float]
 
 import math
@@ -130,101 +130,142 @@ class Window:
 
     _current_window = None
     def __init__(self, width:int=720, height:int=576, title="GLFW window"):
+        # Pass initial properties
+        self._width, self._height = width, height
+        self.__class__._current_window = self
+        self._fullscreen = False
 
-        # initialize glfw
+        # Init glfw window
         if not glfw.init():
             return
 
-        self._width, self._height = width, height
-
-        print("creating the window")
         glfw.window_hint(glfw.DECORATED, True) # Show/Hide titlebar
         self.window = glfw.create_window(self._width, self._height, title, None, None)
-
-        glfw.set_window_refresh_callback(self.window, self.on_refresh) # render while eventloop is blocking eg: resize
-        glfw.set_framebuffer_size_callback(self.window, self.on_resize)
-
-        glfw.set_cursor_pos_callback(self.window, self.on_cursor_pos)
-        glfw.set_key_callback(self.window, self.on_key)
-        # glfw.set_mouse_button_callback(self.window, self.on_mouse_button)
-
-
         if not self.window:
             glfw.terminate()
             print("cant create window")
             return
-        self._fullscreen = False
+
         glfw.make_context_current(self.window)
         glfw.swap_interval(1) # vsync
         glEnable(GL_PROGRAM_POINT_SIZE)
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-        # handle selection
-        self.mouse_pos = 0, 0
-        self.mouse_down = []
-        self.selection_active = False
-        self.selection_start = (0,0)
-        self.selection_end = (0,0)
+        # Events
+        glfw.set_window_refresh_callback(self.window, self._on_refresh) # render while eventloop is blocking eg: resize
+        glfw.set_framebuffer_size_callback(self.window, self._on_resize)
 
-        self.__class__._current_window = self
+        glfw.set_cursor_pos_callback(self.window, self._on_cursor_pos)
+        glfw.set_key_callback(self.window, self._on_key)
+        glfw.set_mouse_button_callback(self.window, self._on_mouse_button)
+        glfw.set_char_callback(self.window, self._on_char)
+        glfw.set_char_mods_callback(self.window, self._on_char_mods)
+        glfw.set_cursor_enter_callback(self.window, self._on_cursor_enter)
+        glfw.set_scroll_callback(self.window, self._on_scroll)
 
-        self.on_resize(self.window, self.width, self.height)
-
+        self._mousepos = (0,0)
+        self._mousebegin = (0,0)
+        self._mousedelta = (0,0)
+        self._is_mouse_dragging = False
+        self.DRAG_THRESHOLD = 5
         self.handlers = {
-            "on_event": [],
             "on_input_event": [],
             "on_refresh": [],
             "on_resize": [],
             "on_render":[],
-            "on_key_press": [],
-            "on_key_release": [],
-
-            "on_mouse_move": [],
-            "on_mouse_press": [],
-            "on_mouse_release": [],
-            "on_mouse_click": [],
-            "on_mouse_drag": [],
-            "on_mouse_enter": [],
-            "on_mouse_leave": [],
-            "on_mouse_scroll": []
         }
 
-        self.events = []
-        self.keysdown = set()
+        # initial resize
+        self._on_resize(self.window, self.width, self.height)
 
-    def on_event(self, fn:Callable):
-        assert fn.__name__ in self.handlers, f"no {fn.__name__} event handler"
-        event_name = fn.__name__
-        self.handlers[event_name].append(fn)
+    #Attach event handlers
+    def on_render(self, fn:Callable):
+        self.handlers["on_render"].append(fn)
 
-    def dispatch(self, event:MouseEvent):
-        #collect all events
-        self.events.append(event)
+    def on_input_event(self, fn:Callable):
+        """register input event handler"""
+        self.handlers["on_input_event"].append(fn)
 
-        # dispatch event to general event handlers
-        for fn in self.handlers["on_event"]:
-            fn(event)
+    # dispatch input events
+    def dispatch(self, *args, **kwargs):
+        # print("event:", *args, kwargs)
+        for fn in self.handlers["on_input_event"]:
+            fn(*args,**kwargs)
 
-        # dispatch event to mouse event handlers
-        if event.name.startswith("on_key") or event.name.startswith("on_mouse"):
-            for fn in self.handlers["on_input_event"]:
-                fn(event)
+    # GLFW INPUT CALLBACKS
+    def _on_cursor_enter(self, window, entered:int):
+        if entered == 1:
+            self._mousebegin = self._mousepos = glfw.get_cursor_pos(window)
+            self._mousedelta = (0,0)
+            self.dispatch("mouseenter")
+        elif entered == 0:
+            self.dispatch("mouseleave")
 
-        # dispatch specific event handler
-        for fn in self.handlers[event.name]:
-            fn(event)
+    def _on_cursor_pos(self, window, x:float, y:float):
+        self._mousedelta = subtract((x,y), self._mousepos)
+        
+        AnyButtonDown = any(glfw.get_mouse_button(window, button)==glfw.PRESS for button in [glfw.MOUSE_BUTTON_LEFT, glfw.MOUSE_BUTTON_RIGHT, glfw.MOUSE_BUTTON_MIDDLE])
+        if not AnyButtonDown:
+            self._mousebegin = self._mousepos
+        else:
+            if distance(self._mousebegin, (x,y))>self.DRAG_THRESHOLD:
+                self._is_mouse_dragging = True
+        self._mousepos = (x,y)
+        self.dispatch("mousemove")
 
-    def get_mouse_pos(self):
+    def _on_mouse_button(self, window, button:int, action:int, mods:int):
+        if action == glfw.PRESS:
+            self.dispatch("mousepress", button, action, mods)
+
+        elif action == glfw.RELEASE:
+            self.dispatch("mouserelease", button, action, mods)
+            self._is_mouse_dragging = False
+
+    def _on_scroll(self, window, xoffset:float, yoffset:float):
+        self.dispatch("scroll", xoffset, yoffset)
+
+    def _on_key(self, window, key:int, scancode:int, action:int, mods:int):
+        if key == glfw.KEY_F11  and action == glfw.PRESS:
+            self.toggle_fullscreen()
+
+        self.dispatch("key", key, scancode, action, mods)
+
+    def _on_char(self, window, codepoint:int):
+        self.dispatch("char", codepoint)
+
+    def _on_char_mods(self, window, codepoint:int, mods:int):
+        self.dispatch("char mods", codepoint, mods)
+
+    # Get input states
+    def get_mouse_pos(self)->Tuple[float, float]:
         return glfw.get_cursor_pos(self.window)
 
-    def get_mouse_button(klass, button):
-        return glfw.get_mouse_button(self.window, button)
+    def get_mouse_delta(self)->Tuple[float, float]:
+        return self._mousedelta
 
-    def on_resize(self, window, width, height):
+    def get_mouse_begin(self)->Tuple[float, float]:
+        return self._mousebegin
+
+    def is_mouse_down(self, button: glfw.MOUSE_BUTTON_LEFT | glfw.MOUSE_BUTTON_RIGHT | glfw.MOUSE_BUTTON_MIDDLE)->bool:
+        return glfw.get_mouse_button(self.window, button) == glfw.PRESS
+
+    def is_mouse_dragging(self)->bool:
+        return self._is_mouse_dragging
+
+    def is_key_down(self, key)->bool:
+        return glfw.get_key(self.window, key) == glfw.PRESS
+
+    # Handle window refresh and resize
+    def _on_refresh(self, window):
+        self.render()
+        glfw.swap_buffers(window)
+
+    def _on_resize(self, window, width, height):
         glViewport(0,0,width, height)
         self._width, self._height = width, height
 
+    # window properties
     @property
     def width(self):
         return self._width
@@ -237,6 +278,7 @@ class Window:
     def aspect(self):
         return self.width / self.height
 
+    # viewer properties
     @property
     def viewport(self):
         return (0,0,self.width, self.height)
@@ -249,25 +291,14 @@ class Window:
     def view(self):
         return glm.translate((0,0,1))
 
-    def get_mouse_pos(self)->Tuple[float, float]:
-        return glfw.get_cursor_pos(self.window)
-
-    def get_mouse_button(self, button: glfw.MOUSE_BUTTON_RIGHT | glfw.MOUSE_BUTTON_LEFT | glfw.MOUSE_BUTTON_MIDDLE):
-        return glfw.get_mouse_button(self.window, button) == glfw.PRESS
-
-    def is_key_down(self, key):
-        return glfw.get_key(self.window, key) == glfw.PRESS
-
     @classmethod
     def get_current_window(cls):
         return cls._current_window
 
+    # ations
     def clear(self, color=(0.1, 0.1, 0.1, 1.0)):
         glClearColor(*color)
         glClear(GL_COLOR_BUFFER_BIT)
-
-    def render(self):
-        self.dispatch(RenderEvent())
 
     def toggle_fullscreen(self):
         if not self._fullscreen:
@@ -281,81 +312,11 @@ class Window:
             glfw.set_window_monitor(self.window, None, x, y, w, h, glfw.DONT_CARE)
             self._fullscreen = False
 
-    def on_key(self, window, key:int, scancode:int, action:int, mods:int):
-        if key == glfw.KEY_F11  and action == glfw.PRESS:
-            self.toggle_fullscreen()
+    def render(self):
+        for fn in self.handlers["on_render"]:
+            fn()
 
-        if action == glfw.PRESS:
-            self.keysdown.add(key)
-            self.dispatch(KeyPressEvent(key=key))
-        if action == glfw.RELEASE:
-            self.keysdown.remove(key)
-            self.dispatch(KeyReleaseEvent(key=key))
-
-    def on_refresh(self, window):
-        self.render()
-        glfw.swap_buffers(window)
-
-    def on_cursor_pos(self, window, x, y):
-        pass
-
-    def is_mouse_moved(self):
-        found = next(filter(lambda e:isinstance(e, MouseMoveEvent), self.events), None)
-        return True if found else False
-
-    def is_mouse_clicked(self):
-        found = next(filter(lambda e:isinstance(e, MouseClickEvent), self.events), None)
-        return True if found else False
-
-    def is_mouse_dragged(self):
-        found = next(filter(lambda e:isinstance(e, MouseDragEvent), self.events), None)
-        return True if found else False
-
-    def is_mouse_pressed(self):
-        found = next(filter(lambda e:isinstance(e, MousePressEvent), self.events), None)
-        return True if found else False
-
-    def is_mouse_releaseed(self):
-        found = next(filter(lambda e:isinstance(e, MouseReleaseEvent), self.events), None)
-        return True if found else False
-
-    def is_key_pressed(self, key):
-        found = next(filter(lambda e:isinstance(e, KeyPressEvent), self.events), None)
-        if found and found.key == key:
-            return True
-        return False
-
-    def is_key_released(self, key):
-        found = next(filter(lambda e:isinstance(e, KeyReleaseEvent), self.events), None)
-        if found and found.key == key:
-            return True
-        return False
-
-
-    # def on_mouse_button(self, window, button:int, action:int, mods:int):
-    #     if button == glfw.MOUSE_BUTTON_LEFT:
-    #         if action == glfw.PRESS:
-    #             self.selection_start = (self.mouse_x, self.mouse_y)
-    #             self.selection_active = True
-    #         elif action == glfw.RELEASE:
-    #             self.selection_end = (self.mouse_x, self.mouse_y)
-    #             self.selection_active = False
-    #             self.finalize_selection()
-
-    # def on_mouse_move(self, window, x:int, y:int):
-    #     self.mouse_x = x
-    #     self.mouse_y = y
-    #     if self.selection_active:
-    #         self.selection_end = (self.mouse_x, self.mouse_y)
-
-    # def finalize_selection(self):
-    #     if self.selection_start and self.selection_end:
-    #         # Determine selected points within the selection box
-    #         min_x = min(self.selection_start[0], self.selection_end[0])
-    #         max_x = max(self.selection_start[0], self.selection_end[0])
-    #         min_y = min(self.selection_start[1], self.selection_end[1])
-    #         max_y = max(self.selection_start[1], self.selection_end[1])
-
+    # callbacks?
     def start(self):
         mousepos = self.get_mouse_pos()
         mousebegin = mousepos
@@ -366,38 +327,6 @@ class Window:
         while not glfw.window_should_close(self.window):
             self.events = []
             glfw.poll_events()
-
-            lastmouse = mousepos
-            mousepos = self.get_mouse_pos()
-            mousedelta = subtract(mousepos, lastmouse)
-
-            # fire events
-            if state == "IDLE":
-                if length(mousedelta)>0:
-                    self.dispatch(MouseMoveEvent(pos=mousepos, delta=mousedelta))
-
-                if self.get_mouse_button(glfw.MOUSE_BUTTON_LEFT):
-                    state = "DOWN"
-                    mousebegin = mousepos
-                    self.dispatch(MousePressEvent(pos=mousepos, button=glfw.MOUSE_BUTTON_LEFT))
-
-            elif state == "DOWN":
-                if distance(mousepos, mousebegin)>0.1:
-                    state = "DRAG"
-                elif not self.get_mouse_button(glfw.MOUSE_BUTTON_LEFT):
-                    self.dispatch(MouseReleaseEvent(pos=mousepos, button=glfw.MOUSE_BUTTON_LEFT))
-                    self.dispatch(MouseClickEvent(pos=mousepos, button=glfw.MOUSE_BUTTON_LEFT))
-
-                    state = "IDLE"
-
-            if state == "DRAG":
-                if length(mousedelta)>0:
-                    self.dispatch(MouseDragEvent(pos=mousebegin, begin=mousebegin))
-
-
-                if not self.get_mouse_button(glfw.MOUSE_BUTTON_LEFT):
-                    state = "IDLE"
-                    self.dispatch(MouseReleaseEvent(pos=mousepos, button=glfw.MOUSE_BUTTON_LEFT))
 
             """Render YOUR STUFF here"""
             self.render()
@@ -410,6 +339,7 @@ class Window:
 
 
 if __name__ == "__main__":
+    import time
     class MyWindow(Window):
         def __init__(self, width:int=720, height:int=576, title="My GLFW window"):
             super().__init__(width=width, height=height, title=title)
@@ -418,16 +348,46 @@ if __name__ == "__main__":
         def render(self):
             super().render()
             # draw your stuff here
-            print(  )
 
-        # def on_cursor_pos(self, window, x, y):
-        #     print(x, y)
 
     window = MyWindow(title="My Window")
 
-    @window.on_event
-    def on_input_event(event):
+    @window.on_input_event
+    def on_input_event(event, *args, **kwargs):
+        print("            event:", event)
+        print("    get_mouse_pos:", window.get_mouse_pos())
+        print("  get_mouse_delta:", window.get_mouse_delta())
+        print("    is mouse down:", [window.is_mouse_down(button) for button in [glfw.MOUSE_BUTTON_LEFT, glfw.MOUSE_BUTTON_RIGHT, glfw.MOUSE_BUTTON_MIDDLE]])
+        print("  get_mouse_begin:", window.get_mouse_begin())
+        print("is_mouse_dragging:", window.is_mouse_dragging())
+        print()
+
+        if event == "mousepress":
+            print("press")
+
+        elif event == "mousemove":
+            if window.is_mouse_dragging():
+                print("drag")
+            else:
+                print("move")
+
+        elif event=="mouserelease":
+            if window.is_mouse_dragging():
+                print("drag end")
+            else:
+                print("click")
+
+        elif event=="mouseenter":
+            print("mouseenter")
+
+        elif event=="mouseleave":
+            print("mouseleave")
+
+        else:
+            print("else", event, *args, kwargs)
+
+    @window.on_render
+    def render():
         pass
-        # print(event)
 
     window.start()
